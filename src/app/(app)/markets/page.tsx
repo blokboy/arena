@@ -1,14 +1,11 @@
 import { AppShell } from "@/components/app-shell";
+import { currentUserOrRedirect } from "@/server/authenticated-user";
 
-const sampleUser = {
-  username: "demo",
-  balance: 1000,
-  showStartingBalance: true
-};
+export default async function MarketsPage() {
+  const user = await currentUserOrRedirect();
 
-export default function MarketsPage() {
   return (
-    <AppShell currentPath="/markets" user={sampleUser}>
+    <AppShell currentPath="/markets" user={user}>
       <section className="space-y-4">
         <div>
           <h1 className="text-2xl font-semibold">Markets</h1>

@@ -150,7 +150,7 @@ Use React Testing Library for component behavior and Playwright for a small numb
 
 Required component coverage:
 
-- Auth forms show generic login errors and field-specific signup validation.
+- Auth forms show generic login errors and field-specific signup validation, and successful login/signup submissions must be asserted through the rendered form by verifying the real auth endpoint contract and authenticated-page navigation. Route-handler tests alone are not sufficient for auth changes.
 - Buy panel disables stake above balance and previews shares from `bestAsk`.
 - Sell panel groups lots, distinguishes per-lot sell from sell-all, and confirms sell-all scope.
 - Portfolio groups open and settled positions by `(marketId, outcomeIndex)`.
@@ -163,7 +163,8 @@ Required component coverage:
 
 Recommended Playwright smoke flows:
 
-- Register, log in, buy a position, and see the balance change.
+- Register through the UI, land on an authenticated app page as the created user, log out, log back in through the UI, and see the authenticated shell. This smoke test should fail if forms only validate locally or authenticated pages use demo users.
+- Buy a position and see the balance change.
 - Create a standard parlay draft, seed leg 1 with a purchased position, and verify it appears active.
 - Back a Day's Parlay leg and spend the one rollover vote.
 - Run an admin/test-only settlement helper in a seeded environment and verify visible portfolio/leaderboard updates.

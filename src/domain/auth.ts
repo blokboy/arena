@@ -20,6 +20,21 @@ export type AuthResult =
   | { ok: true; username: string; balance: number }
   | { ok: false; code: AuthErrorCode; message: string };
 
+export type CredentialUser = {
+  id: string;
+  username: string;
+  passwordHash: string;
+  balance: number;
+  hasSeenStartingBalanceBanner?: boolean;
+};
+
+export type CredentialRepository = {
+  findByUsername(username: string): CredentialUser | undefined;
+};
+
+export type CredentialResult =
+  { ok: true; user: CredentialUser } | { ok: false; code: "INVALID_CREDENTIALS"; message: string };
+
 export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   USERNAME_REQUIRED: "Choose a username.",
   USERNAME_INVALID: "Use letters, numbers, underscores, or hyphens.",
@@ -61,4 +76,32 @@ export async function hashPassword(password: string) {
 
 export async function verifyPassword(password: string, passwordHash: string) {
   return bcrypt.compare(password, passwordHash);
+}
+
+export async function verifyCredentials(
+  input: { username: string; password: string },
+  users: CredentialRepository
+): Promise<CredentialResult> {
+  const username = input.username.trim().toLowerCase();
+  const user = users.findByUsername(username);
+
+  if (!user) {
+    return credentialError();
+  }
+
+  const isValidPassword = await verifyPassword(input.password, user.passwordHash);
+
+  if (!isValidPassword) {
+    return credentialError();
+  }
+
+  return { ok: true, user };
+}
+
+function credentialError(): CredentialResult {
+  return {
+    ok: false,
+    code: "INVALID_CREDENTIALS",
+    message: AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS
+  };
 }

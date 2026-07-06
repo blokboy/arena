@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authError, hashPassword, validateSignup } from "@/domain/auth";
+import { createSession, SESSION_COOKIE_NAME } from "@/server/sessions";
 import { userRepository } from "@/server/users";
 
 export async function POST(request: Request) {
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   const passwordHash = await hashPassword(body.password ?? "");
   const user = userRepository.createUser({ username: validation.username, passwordHash });
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       user: {
         id: user.id,
@@ -37,4 +38,12 @@ export async function POST(request: Request) {
     },
     { status: 201 }
   );
+
+  response.cookies.set(SESSION_COOKIE_NAME, createSession(user.id), {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/"
+  });
+
+  return response;
 }

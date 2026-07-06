@@ -5,12 +5,14 @@ export type StoredUser = {
   username: string;
   passwordHash: string;
   balance: number;
+  hasSeenStartingBalanceBanner: boolean;
 };
 
 export type UserRepository = {
   createUser(input: { username: string; passwordHash: string }): StoredUser;
   findByUsername(username: string): StoredUser | undefined;
   findById(id: string): StoredUser | undefined;
+  markStartingBalanceBannerSeen(id: string): StoredUser | undefined;
   clear(): void;
 };
 
@@ -25,7 +27,8 @@ export function createMemoryUserRepository(): UserRepository {
         id: `user_${nextId++}`,
         username: input.username,
         passwordHash: input.passwordHash,
-        balance: STARTING_BALANCE
+        balance: STARTING_BALANCE,
+        hasSeenStartingBalanceBanner: false
       };
       users.set(user.username, user);
       ids.set(user.id, user);
@@ -36,6 +39,15 @@ export function createMemoryUserRepository(): UserRepository {
     },
     findById(id) {
       return ids.get(id);
+    },
+    markStartingBalanceBannerSeen(id) {
+      const user = ids.get(id);
+      if (!user) {
+        return undefined;
+      }
+
+      user.hasSeenStartingBalanceBanner = true;
+      return user;
     },
     clear() {
       users.clear();

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AUTH_ERROR_MESSAGES, type AuthErrorCode, validateSignup } from "@/domain/auth";
 
@@ -11,7 +12,9 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ mode, initialError }: AuthFormProps) {
+  const router = useRouter();
   const [error, setError] = useState<AuthErrorCode | undefined>(initialError);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const title = mode === "login" ? "Log in" : "Create account";
 
@@ -19,18 +22,60 @@ export function AuthForm({ mode, initialError }: AuthFormProps) {
     <main className="mx-auto flex min-h-screen max-w-md items-center px-6">
       <form
         className="w-full rounded-md border border-slate-200 bg-white p-6 shadow-sm"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
+          const username = String(data.get("username") ?? "");
+          const password = String(data.get("password") ?? "");
+
           if (mode === "signup") {
             const result = validateSignup({
-              username: String(data.get("username") ?? ""),
-              password: String(data.get("password") ?? ""),
+              username,
+              password,
               confirmPassword: String(data.get("confirmPassword") ?? "")
             });
-            setError(result.ok ? undefined : result.code);
-          } else {
+
+            if (!result.ok) {
+              setError(result.code);
+              return;
+            }
+          }
+
+          setError(undefined);
+          setIsSubmitting(true);
+
+          try {
+            const response = await fetch(
+              mode === "signup" ? "/api/auth/register" : "/api/auth/login",
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(
+                  mode === "signup"
+                    ? {
+                        username,
+                        password,
+                        confirmPassword: String(data.get("confirmPassword") ?? "")
+                      }
+                    : { username, password }
+                )
+              }
+            );
+            const body = (await response.json().catch(() => undefined)) as
+              | { error?: { code?: AuthErrorCode } }
+              | undefined;
+
+            if (!response.ok) {
+              setError(body?.error?.code ?? "INVALID_CREDENTIALS");
+              return;
+            }
+
+            router.push("/markets");
+            router.refresh();
+          } catch {
             setError("INVALID_CREDENTIALS");
+          } finally {
+            setIsSubmitting(false);
           }
         }}
       >
@@ -70,7 +115,10 @@ export function AuthForm({ mode, initialError }: AuthFormProps) {
             {AUTH_ERROR_MESSAGES[error]}
           </p>
         ) : null}
-        <button className="mt-5 w-full rounded-md bg-primary px-4 py-2 font-medium text-white">
+        <button
+          className="mt-5 w-full rounded-md bg-primary px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isSubmitting}
+        >
           {title}
         </button>
       </form>

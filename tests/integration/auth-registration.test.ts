@@ -13,4 +13,16 @@ describe("registration persistence seam", () => {
     expect(user.passwordHash).not.toBe("long-enough");
     await expect(verifyPassword("long-enough", user.passwordHash)).resolves.toBe(true);
   });
+
+  test("new users start with the signup balance banner unseen until it is marked seen", async () => {
+    const passwordHash = await hashPassword("long-enough");
+    const user = userRepository.createUser({ username: "mira", passwordHash });
+
+    expect(user.hasSeenStartingBalanceBanner).toBe(false);
+    expect(userRepository.markStartingBalanceBannerSeen(user.id)).toMatchObject({
+      id: user.id,
+      hasSeenStartingBalanceBanner: true
+    });
+    expect(userRepository.findById(user.id)?.hasSeenStartingBalanceBanner).toBe(true);
+  });
 });

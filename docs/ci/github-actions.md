@@ -15,6 +15,8 @@ Recommended required GitHub Actions checks:
 - `e2e-smoke`: Playwright smoke tests once a runnable app shell exists.
 - `build`: `next build`.
 
+Auth-related PRs must exercise both sides of the auth boundary: route/API tests for credential/session behavior and component or Playwright tests that submit the rendered UI and prove the authenticated app shell uses the session user rather than fixture/demo props. A green API job by itself is not enough evidence that users can get through authentication.
+
 For the current greenfield repo, `repo-hygiene` is the only runnable check. Add the remaining jobs in the first scaffold PR that introduces `package.json`, Prisma, and the Next.js app.
 
 ## GitHub Actions Shape

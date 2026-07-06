@@ -12,3 +12,10 @@ export function jsonRequest(url: string, body: unknown, headers?: HeadersInit) {
     body: JSON.stringify(body)
   });
 }
+
+export function cookieHeader(response: Response) {
+  return response.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
+}

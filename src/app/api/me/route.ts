@@ -13,7 +13,8 @@ export async function GET(request: Request) {
     user: {
       id: user.id,
       username: user.username,
-      balance: user.balance
+      balance: user.balance,
+      showStartingBalance: !user.hasSeenStartingBalanceBanner
     }
   });
 }
