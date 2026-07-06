@@ -5,25 +5,22 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AuthForm } from "@/components/auth-form";
 
-const router = {
-  push: vi.fn(),
-  refresh: vi.fn()
-};
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => router
-}));
-
 describe("AuthForm", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    router.push.mockReset();
-    router.refresh.mockReset();
   });
 
   test("uses real labels for auth fields", () => {
     render(<AuthForm mode="signup" />);
 
+    expect(screen.getByRole("button", { name: "Create account" }).closest("form")).toHaveAttribute(
+      "action",
+      "/api/auth/register"
+    );
+    expect(screen.getByRole("button", { name: "Create account" }).closest("form")).toHaveAttribute(
+      "method",
+      "post"
+    );
     expect(screen.getByLabelText("Username")).toHaveAttribute("name", "username");
     expect(screen.getByLabelText("Password")).toHaveAttribute("name", "password");
     expect(screen.getByLabelText("Confirm password")).toHaveAttribute("name", "confirmPassword");
@@ -33,6 +30,7 @@ describe("AuthForm", () => {
     const fetch = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(response({ user: { id: "user_1", username: "casey", balance: 1000 } }));
+    const assign = stubLocationAssign();
 
     render(<AuthForm mode="login" />);
 
@@ -45,14 +43,14 @@ describe("AuthForm", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: "Casey", password: "long-enough" })
     });
-    expect(router.push).toHaveBeenCalledWith("/markets");
-    expect(router.refresh).toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith("/markets");
   });
 
   test("submits valid signup details and navigates into the app", async () => {
     const fetch = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(response({ user: { id: "user_1", username: "casey", balance: 1000 } }));
+    const assign = stubLocationAssign();
 
     render(<AuthForm mode="signup" />);
 
@@ -70,8 +68,7 @@ describe("AuthForm", () => {
         confirmPassword: "long-enough"
       })
     });
-    expect(router.push).toHaveBeenCalledWith("/markets");
-    expect(router.refresh).toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith("/markets");
   });
 
   test("shows generic login failure copy", async () => {
@@ -149,4 +146,16 @@ function response(body: unknown, init?: ResponseInit) {
     headers: { "content-type": "application/json" },
     ...init
   });
+}
+
+function stubLocationAssign() {
+  const assign = vi.fn();
+  const location = globalThis.location;
+
+  vi.stubGlobal("location", {
+    ...location,
+    assign
+  });
+
+  return assign;
 }

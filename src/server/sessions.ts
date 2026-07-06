@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 export const SESSION_COOKIE_NAME = "arena_session";
 
-const sessions = new Map<string, string>();
+const globalMemory = globalThis as typeof globalThis & {
+  __arenaSessions?: Map<string, string>;
+};
+
+const sessions = (globalMemory.__arenaSessions ??= new Map<string, string>());
 
 export function createSession(userId: string) {
   const token = randomUUID();

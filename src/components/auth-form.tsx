@@ -2,7 +2,6 @@
 
 import React from "react";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { AUTH_ERROR_MESSAGES, type AuthErrorCode, validateSignup } from "@/domain/auth";
 
@@ -12,7 +11,6 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ mode, initialError }: AuthFormProps) {
-  const router = useRouter();
   const [error, setError] = useState<AuthErrorCode | undefined>(initialError);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -21,7 +19,9 @@ export function AuthForm({ mode, initialError }: AuthFormProps) {
   return (
     <main className="mx-auto flex min-h-screen max-w-md items-center px-6">
       <form
+        action={mode === "signup" ? "/api/auth/register" : "/api/auth/login"}
         className="w-full rounded-md border border-slate-200 bg-white p-6 shadow-sm"
+        method="post"
         onSubmit={async (event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
@@ -70,8 +70,7 @@ export function AuthForm({ mode, initialError }: AuthFormProps) {
               return;
             }
 
-            router.push("/markets");
-            router.refresh();
+            globalThis.location.assign("/markets");
           } catch {
             setError("INVALID_CREDENTIALS");
           } finally {

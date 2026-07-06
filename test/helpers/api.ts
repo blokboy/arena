@@ -13,6 +13,14 @@ export function jsonRequest(url: string, body: unknown, headers?: HeadersInit) {
   });
 }
 
+export function formRequest(url: string, body: Record<string, string>, headers?: HeadersInit) {
+  return new Request(url, {
+    method: "POST",
+    headers,
+    body: new URLSearchParams(body)
+  });
+}
+
 export function cookieHeader(response: Response) {
   return response.headers
     .getSetCookie()

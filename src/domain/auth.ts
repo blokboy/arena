@@ -70,6 +70,10 @@ export function authError(code: AuthErrorCode): AuthResult {
   return { ok: false, code, message: AUTH_ERROR_MESSAGES[code] };
 }
 
+export function isAuthErrorCode(value: unknown): value is AuthErrorCode {
+  return typeof value === "string" && value in AUTH_ERROR_MESSAGES;
+}
+
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
 }

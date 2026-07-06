@@ -16,15 +16,29 @@ export type UserRepository = {
   clear(): void;
 };
 
-export function createMemoryUserRepository(): UserRepository {
-  const users = new Map<string, StoredUser>();
-  const ids = new Map<string, StoredUser>();
-  let nextId = 1;
+type MemoryUserRepositoryState = {
+  users: Map<string, StoredUser>;
+  ids: Map<string, StoredUser>;
+  nextId: number;
+};
+
+function createMemoryUserRepositoryState(): MemoryUserRepositoryState {
+  return {
+    users: new Map<string, StoredUser>(),
+    ids: new Map<string, StoredUser>(),
+    nextId: 1
+  };
+}
+
+export function createMemoryUserRepository(
+  state = createMemoryUserRepositoryState()
+): UserRepository {
+  const { users, ids } = state;
 
   return {
     createUser(input) {
       const user = {
-        id: `user_${nextId++}`,
+        id: `user_${state.nextId++}`,
         username: input.username,
         passwordHash: input.passwordHash,
         balance: STARTING_BALANCE,
@@ -52,9 +66,15 @@ export function createMemoryUserRepository(): UserRepository {
     clear() {
       users.clear();
       ids.clear();
-      nextId = 1;
+      state.nextId = 1;
     }
   };
 }
 
-export const userRepository = createMemoryUserRepository();
+const globalMemory = globalThis as typeof globalThis & {
+  __arenaUserRepositoryState?: MemoryUserRepositoryState;
+};
+
+export const userRepository = createMemoryUserRepository(
+  (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
+);

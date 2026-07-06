@@ -6,7 +6,7 @@ import { POST as register } from "@/app/api/auth/register/route";
 import { GET as getMe } from "@/app/api/me/route";
 import { verifyPassword } from "@/domain/auth";
 import { userRepository } from "@/server/users";
-import { cookieHeader, jsonRequest } from "@test/helpers/api";
+import { cookieHeader, formRequest, jsonRequest } from "@test/helpers/api";
 
 describe("auth API", () => {
   test("register creates a starting-balance user with a hashed password", async () => {
@@ -48,6 +48,30 @@ describe("auth API", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       user: { username: "jules", balance: 1000 }
+    });
+  });
+
+  test("form registration redirects into the app with a usable session", async () => {
+    const registerResponse = await register(
+      formRequest("http://arena.test/api/auth/register", {
+        username: "form-user",
+        password: "long-enough",
+        confirmPassword: "long-enough"
+      })
+    );
+
+    expect(registerResponse.status).toBe(303);
+    expect(registerResponse.headers.get("location")).toBe("http://arena.test/markets");
+
+    const response = await getMe(
+      new Request("http://arena.test/api/me", {
+        headers: { cookie: cookieHeader(registerResponse) }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      user: { username: "form-user", balance: 1000 }
     });
   });
 
@@ -136,6 +160,37 @@ describe("auth API", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       user: { username: "mira", balance: 1000 }
+    });
+  });
+
+  test("form login redirects into the app with a usable session", async () => {
+    await register(
+      jsonRequest("http://arena.test/api/auth/register", {
+        username: "form-login",
+        password: "long-enough",
+        confirmPassword: "long-enough"
+      })
+    );
+
+    const loginResponse = await login(
+      formRequest("http://arena.test/api/auth/login", {
+        username: "form-login",
+        password: "long-enough"
+      })
+    );
+
+    expect(loginResponse.status).toBe(303);
+    expect(loginResponse.headers.get("location")).toBe("http://arena.test/markets");
+
+    const response = await getMe(
+      new Request("http://arena.test/api/me", {
+        headers: { cookie: cookieHeader(loginResponse) }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      user: { username: "form-login", balance: 1000 }
     });
   });
 
