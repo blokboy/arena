@@ -1,1 +1,7 @@
 .claude/worktrees/
+node_modules/
+.next/
+.pnpm-store/
+tsconfig.tsbuildinfo
+playwright-report/
+test-results/

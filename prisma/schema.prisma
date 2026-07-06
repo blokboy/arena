@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PositionStatus {
+  OPEN
+  SOLD
+  WON
+  LOST
+  VOIDED
+}
+
+enum ParlayKind {
+  REGULAR
+  DAYS_PARLAY
+}
+
+enum ParlayStatus {
+  ACTIVE
+  WON
+  LOST
+  VOIDED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  passwordHash   String
+  balance        Decimal  @default(1000) @db.Decimal(18, 6)
+  signupBannerAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  positions       Position[]
+  createdParlays  Parlay[]             @relation("CreatedParlays")
+  memberships     ParlayMember[]
+  legStakes       LegStake[]
+  rolloverVotes   RolloverVote[]
+  stipendGrants   BankruptcyStipendGrant[]
+}
+
+model CachedEvent {
+  id           String   @id @default(cuid())
+  gammaId      String   @unique
+  category     String
+  title        String
+  volume       Decimal  @default(0) @db.Decimal(18, 6)
+  lastSyncedAt DateTime
+  markets      CachedMarket[]
+}
+
+model CachedMarket {
+  id            String   @id @default(cuid())
+  gammaId       String   @unique
+  eventId       String
+  question      String
+  outcomes      Json
+  outcomePrices Json
+  bestBid       Decimal  @db.Decimal(18, 6)
+  bestAsk       Decimal  @db.Decimal(18, 6)
+  active        Boolean  @default(true)
+  closed        Boolean  @default(false)
+  endDate       DateTime
+  lastSyncedAt  DateTime
+
+  event     CachedEvent @relation(fields: [eventId], references: [id])
+  positions Position[]
+  legs      ParlayLeg[]
+}
+
+model Position {
+  id              String         @id @default(cuid())
+  userId          String
+  marketId        String
+  outcomeIndex    Int
+  entryPrice      Decimal        @db.Decimal(18, 6)
+  stake           Decimal        @db.Decimal(18, 6)
+  shares          Decimal        @db.Decimal(18, 6)
+  committedShares Decimal        @default(0) @db.Decimal(18, 6)
+  status          PositionStatus @default(OPEN)
+  exitPrice       Decimal?       @db.Decimal(18, 6)
+  realizedPoints  Decimal?       @db.Decimal(18, 6)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user    User         @relation(fields: [userId], references: [id])
+  market  CachedMarket @relation(fields: [marketId], references: [id])
+  sources LegStakeSource[]
+}
+
+model Parlay {
+  id           String       @id @default(cuid())
+  kind         ParlayKind
+  name         String
+  dayKey       String?
+  creatorId    String?
+  status       ParlayStatus @default(ACTIVE)
+  rolloverUsed Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  creator User?          @relation("CreatedParlays", fields: [creatorId], references: [id])
+  members ParlayMember[]
+  legs    ParlayLeg[]
+}
+
+model ParlayMember {
+  parlayId String
+  userId   String
+
+  parlay Parlay @relation(fields: [parlayId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([parlayId, userId])
+}
+
+model ParlayLeg {
+  id           String   @id @default(cuid())
+  parlayId     String
+  marketId     String
+  outcomeIndex Int
+  resolutionAt DateTime
+  sortKey      String
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+
+  parlay Parlay       @relation(fields: [parlayId], references: [id])
+  market CachedMarket @relation(fields: [marketId], references: [id])
+  stakes LegStake[]
+  votes  RolloverVote[]
+
+  @@unique([parlayId, marketId])
+}
+
+model LegStake {
+  id                 String  @id @default(cuid())
+  legId              String
+  userId             String
+  shares             Decimal @db.Decimal(18, 6)
+  committedPrincipal Decimal @db.Decimal(18, 6)
+
+  leg     ParlayLeg        @relation(fields: [legId], references: [id])
+  user    User             @relation(fields: [userId], references: [id])
+  sources LegStakeSource[]
+
+  @@unique([legId, userId])
+}
+
+model LegStakeSource {
+  id         String  @id @default(cuid())
+  stakeId    String
+  positionId String
+  shares     Decimal @db.Decimal(18, 6)
+  principal  Decimal @db.Decimal(18, 6)
+
+  stake    LegStake @relation(fields: [stakeId], references: [id])
+  position Position @relation(fields: [positionId], references: [id])
+}
+
+model RolloverVote {
+  id        String   @id @default(cuid())
+  legId     String
+  userId    String
+  dayKey    String?
+  value     Boolean
+  createdAt DateTime @default(now())
+
+  leg  ParlayLeg @relation(fields: [legId], references: [id])
+  user User      @relation(fields: [userId], references: [id])
+
+  @@unique([legId, userId])
+}
+
+model HouseTransaction {
+  id        String   @id @default(cuid())
+  amount    Decimal  @db.Decimal(18, 6)
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+model BankruptcyStipendGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  dayKey    String
+  amount    Decimal  @db.Decimal(18, 6)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, dayKey])
+}

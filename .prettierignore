@@ -1,0 +1,9 @@
+.agents/
+.claude/
+.codex/
+.pnpm-store/
+.next/
+node_modules/
+docs/
+CONTEXT.md
+pnpm-lock.yaml
