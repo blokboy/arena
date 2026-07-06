@@ -70,7 +70,13 @@ def check_agents():
             errors.append(f"{rel}: missing 'tools' in frontmatter")
 
 
-LINK_CHECK_EXCLUDES = (".git", ".agents/skills", ".claude/skills")
+LINK_CHECK_EXCLUDES = (
+    ".git",
+    ".agents/skills",
+    ".claude/skills",
+    ".claude/worktrees",
+    "node_modules",
+)
 
 
 def check_internal_links():

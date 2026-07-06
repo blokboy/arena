@@ -1,0 +1,16 @@
+# Rollover authority is stake-weighted per leg, not branched by backer count
+
+> **Superseded by ADR-0003.** Further grilling found that the "unilateral takeover" framing below let non-members effectively buy influence over a member-only decision, and that a majority-or-else-fallback structure needed an awkward tiebreaker for the no-majority case. ADR-0003 replaces the single-controller model with a persistent, member-only, stake-weighted vote, which subsumes "one backer effectively controls the outcome" as the case where their vote alone clears 50% — without a separate control concept, and without non-members ever influencing the tally. Kept below for the record of what was tried and why it didn't survive.
+
+The original design (Part I §7) branched rollover authority by how many backers a leg had: exactly 2 always rolled independently for their own stake only; more than 2 required either a headcount-majority vote or the parlay creator's unilateral override. Grilling surfaced that this isn't the intended mechanic at all.
+
+**Decision:** for **regular multiplayer parlays**, rollover authority on a leg is determined purely by stake value, at any backer count:
+
+- If a single backer currently holds **>50% of that leg's active stake value**, they have unilateral authority over the leg's rollover decision — and it applies to the **whole leg**, including other backers' stakes, whether those backers agree or not ("hostile takeover"). This is dynamic: control transfers automatically the moment a different backer's stake crosses the 50% threshold, recalculated live as backers join or exit the leg.
+- If no backer holds a majority (fragmented stake, or an exact tie), it falls back to a **headcount-majority vote** among the leg's current backers (>50% of backer count) — also a whole-leg decision.
+- The parlay creator has **no standing override authority** over legs they don't personally hold a majority stake in. `Parlay.ownerId` (Backend's schema) remains purely informational (who set up the roster) and no longer gates any rollover logic.
+- The old "exactly 2 backers, always independent" special case is gone. It was a plausible reading when authority was thought of as headcount-based, but doesn't survive stake-weighted authority: at 2 backers, whichever one is above 50% simply controls the leg like at any other count.
+
+**Day's Parlay is an explicit exception**, kept vote-only (majority of backers by headcount, no stake-weighted override, no owner) *by design* — it's a system-wide, anyone-can-back daily format, and a stake-weighted takeover would let one deep-pocketed user unilaterally decide the whole day's outcome for everyone else. The asymmetry between the two parlay types is deliberate: regular parlays are small, self-selected private groups where "the person with the most skin in the game gets the final say" is acceptable; Day's Parlay explicitly is not.
+
+**Consequences:** Designer's rollover UI spec (§2.3, the "2 vs. >2 backers" component split), Backend's `LegStakeStatus`-diverges-from-`LegStatus` schema rationale (motivated by the 2-backer independent case), and Frontend's `RolloverControl` branching on `stakeholderCount` all need to be reworked around "does a majority-stake backer currently exist on this leg" instead of a backer-count threshold. Day's Parlay's existing vote-only implementation is unaffected.
