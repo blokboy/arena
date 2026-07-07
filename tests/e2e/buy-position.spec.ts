@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-// Unskip when Issue #4 (buy position lots from market detail) lands.
-// Skipped so CI stays green if this suite merges before/with the feature.
-// The buy-panel selectors below assume the accessible names sketched in
-// tests/components/buy-panel.test.tsx and the design spec for Issue #4 —
-// adjust them to the shipped UI when unskipping.
-test.skip(true, "Issue #4 buy flow is not implemented yet");
-
 test("user buys a position lot from market detail and sees balance and position update", async ({
   page
 }) => {
