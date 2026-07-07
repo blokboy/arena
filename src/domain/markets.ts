@@ -105,22 +105,38 @@ export function normalizeGammaEvent(
   options: { category: MarketCategory; lastSyncedAt: string }
 ): CachedEvent {
   const eventGammaId = requiredString(event.gammaId ?? event.id, "EVENT_ID");
+  const eventTitle = requiredString(event.title, "EVENT_TITLE");
+
+  const markets: CachedMarket[] = [];
+  for (const market of event.markets ?? []) {
+    try {
+      markets.push(
+        normalizeGammaMarket(market, {
+          eventGammaId,
+          eventTitle,
+          category: options.category,
+          lastSyncedAt: options.lastSyncedAt
+        })
+      );
+    } catch (error) {
+      // Gamma includes placeholder/no-liquidity markets (e.g. long-tail
+      // nomination candidates) that never got prices or outcomes assigned.
+      // Skip just that market rather than losing the whole event/category.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Skipping unnormalizable Gamma market ${String(market.gammaId ?? market.id)} in event ${eventGammaId}: ${reason}`
+      );
+    }
+  }
 
   return {
     gammaId: eventGammaId,
     category: options.category,
-    title: requiredString(event.title, "EVENT_TITLE"),
+    title: eventTitle,
     slug: requiredString(event.slug, "EVENT_SLUG"),
     volume: normalizeNonNegativeDecimal(event.volume ?? "0", "INVALID_VOLUME"),
     lastSyncedAt: options.lastSyncedAt,
-    markets: (event.markets ?? []).map((market) =>
-      normalizeGammaMarket(market, {
-        eventGammaId,
-        eventTitle: requiredString(event.title, "EVENT_TITLE"),
-        category: options.category,
-        lastSyncedAt: options.lastSyncedAt
-      })
-    )
+    markets
   };
 }
 

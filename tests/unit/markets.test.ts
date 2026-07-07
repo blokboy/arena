@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CATEGORY_TAGS,
@@ -84,6 +84,35 @@ describe("Gamma event parsing", () => {
 
     expect(event.markets[0]?.outcomes).toEqual(["France", "Brazil", "Japan"]);
     expect(event.markets[0]?.outcomePrices).toEqual(["0.45", "0.35", "0.2"]);
+  });
+
+  it("skips markets that fail to normalize instead of dropping the whole event", () => {
+    const event = binaryGammaEvent();
+    const [goodMarket] = event.markets ?? [];
+    event.markets = [
+      goodMarket,
+      {
+        id: "market-placeholder-no-prices",
+        question: "Will Person P win the nomination?",
+        slug: "person-p-nomination",
+        outcomes: '["Yes","No"]',
+        // Gamma omits outcomePrices entirely for markets with no liquidity yet.
+        outcomePrices: undefined,
+        active: true,
+        closed: false
+      }
+    ];
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const normalized = normalizeGammaEvent(event, {
+      category: "Politics",
+      lastSyncedAt: "2026-07-06T12:00:00.000Z"
+    });
+
+    expect(normalized.markets).toHaveLength(1);
+    expect(normalized.markets[0]?.gammaId).toBe(goodMarket?.id);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("market-placeholder-no-prices"));
+    warnSpy.mockRestore();
   });
 });
 
