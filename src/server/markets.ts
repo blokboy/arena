@@ -134,13 +134,12 @@ const globalMemory = globalThis as typeof globalThis & {
   __arenaMarketCacheRepository?: MarketCacheRepository;
 };
 
-export const marketCacheRepository =
-  globalMemory.__arenaMarketCacheRepository ??=
-    process.env.NODE_ENV === "test"
-      ? createMemoryMarketCacheRepository(
-          (globalMemory.__arenaMarketCacheRepositoryState ??= createMemoryMarketCacheState())
-        )
-      : createFileMarketCacheRepository(join(process.cwd(), ".arena-cache", "markets.json"));
+export const marketCacheRepository = (globalMemory.__arenaMarketCacheRepository ??=
+  process.env.NODE_ENV === "test"
+    ? createMemoryMarketCacheRepository(
+        (globalMemory.__arenaMarketCacheRepositoryState ??= createMemoryMarketCacheState())
+      )
+    : createFileMarketCacheRepository(join(process.cwd(), ".arena-cache", "markets.json")));
 
 export const TOP_VOLUME_MARKET_DISCOVERY: GammaDiscoveryOptions = {
   active: true,
