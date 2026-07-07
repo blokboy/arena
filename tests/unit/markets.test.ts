@@ -5,7 +5,8 @@ import {
   getCategoryTag,
   isMarketCategory,
   normalizeGammaEvent,
-  normalizePrice
+  normalizePrice,
+  marketCategoryFromSlug
 } from "../../src/domain/markets";
 import { binaryGammaEvent, multiOutcomeGammaEvent } from "../../test/helpers/gamma-fixtures";
 
@@ -29,6 +30,13 @@ describe("market category mapping", () => {
     });
     expect(isMarketCategory("Rumors")).toBe(false);
   });
+
+  it("resolves public category slugs to curated categories", () => {
+    expect(marketCategoryFromSlug("politics")).toBe("Politics");
+    expect(marketCategoryFromSlug("pop-culture")).toBe("Culture");
+    expect(marketCategoryFromSlug("mention-markets")).toBe("Mentions");
+    expect(() => marketCategoryFromSlug("rumors")).toThrow("INVALID_CATEGORY");
+  });
 });
 
 describe("Gamma event parsing", () => {
@@ -49,6 +57,8 @@ describe("Gamma event parsing", () => {
         {
           gammaId: "market-democrat-win-2028",
           eventGammaId: "event-election-2028",
+          eventTitle: "2028 Presidential Election",
+          category: "Politics",
           question: "Will a Democrat win the 2028 US presidential election?",
           slug: "democrat-win-2028",
           outcomes: ["Yes", "No"],
@@ -59,7 +69,8 @@ describe("Gamma event parsing", () => {
           active: true,
           closed: false,
           endDate: "2028-11-08T00:00:00.000Z",
-          volume: "900000"
+          volume: "900000",
+          lastSyncedAt: "2026-07-06T12:00:00.000Z"
         }
       ]
     });

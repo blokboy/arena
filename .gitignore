@@ -2,6 +2,9 @@
 node_modules/
 .next/
 .pnpm-store/
+.env*
+!.env.example
 tsconfig.tsbuildinfo
 playwright-report/
 test-results/
+.arena-cache/

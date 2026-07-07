@@ -58,6 +58,8 @@ export type GammaEvent = {
 export type CachedMarket = {
   gammaId: string;
   eventGammaId: string;
+  eventTitle: string;
+  category: MarketCategory;
   question: string;
   slug: string;
   outcomes: string[];
@@ -69,6 +71,7 @@ export type CachedMarket = {
   closed: boolean;
   endDate: string | null;
   volume: string;
+  lastSyncedAt: string;
 };
 
 export type CachedEvent = {
@@ -89,6 +92,14 @@ export function getCategoryTag(category: MarketCategory): CategoryTag {
   return CATEGORY_TAGS[category];
 }
 
+export function marketCategoryFromSlug(slug: string): MarketCategory {
+  const category = MARKET_CATEGORIES.find((candidate) => CATEGORY_TAGS[candidate].slug === slug);
+  if (!category) {
+    throw new Error("INVALID_CATEGORY");
+  }
+  return category;
+}
+
 export function normalizeGammaEvent(
   event: GammaEvent,
   options: { category: MarketCategory; lastSyncedAt: string }
@@ -102,14 +113,31 @@ export function normalizeGammaEvent(
     slug: requiredString(event.slug, "EVENT_SLUG"),
     volume: normalizeNonNegativeDecimal(event.volume ?? "0", "INVALID_VOLUME"),
     lastSyncedAt: options.lastSyncedAt,
-    markets: (event.markets ?? []).map((market) => normalizeGammaMarket(market, eventGammaId))
+    markets: (event.markets ?? []).map((market) =>
+      normalizeGammaMarket(market, {
+        eventGammaId,
+        eventTitle: requiredString(event.title, "EVENT_TITLE"),
+        category: options.category,
+        lastSyncedAt: options.lastSyncedAt
+      })
+    )
   };
 }
 
-export function normalizeGammaMarket(market: GammaMarket, eventGammaId: string): CachedMarket {
+export function normalizeGammaMarket(
+  market: GammaMarket,
+  options: {
+    eventGammaId: string;
+    eventTitle: string;
+    category: MarketCategory;
+    lastSyncedAt: string;
+  }
+): CachedMarket {
   return {
     gammaId: requiredString(market.gammaId ?? market.id, "MARKET_ID"),
-    eventGammaId,
+    eventGammaId: options.eventGammaId,
+    eventTitle: options.eventTitle,
+    category: options.category,
     question: requiredString(market.question, "MARKET_QUESTION"),
     slug: requiredString(market.slug, "MARKET_SLUG"),
     outcomes: parseStringArray(market.outcomes, "INVALID_OUTCOMES"),
@@ -122,7 +150,8 @@ export function normalizeGammaMarket(market: GammaMarket, eventGammaId: string):
     active: market.active === true,
     closed: market.closed === true,
     endDate: market.endDateIso ?? market.endDate ?? null,
-    volume: normalizeNonNegativeDecimal(market.volume ?? "0", "INVALID_VOLUME")
+    volume: normalizeNonNegativeDecimal(market.volume ?? "0", "INVALID_VOLUME"),
+    lastSyncedAt: options.lastSyncedAt
   };
 }
 
