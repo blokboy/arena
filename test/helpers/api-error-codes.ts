@@ -27,7 +27,27 @@ export const API_ERROR_CODES = [
   "INSUFFICIENT_BALANCE",
   // STANDARD parlay rollover vote from a caller who isn't both a ParlayMember
   // and an active backer of the leg (403).
-  "NOT_A_VOTING_MEMBER"
+  "NOT_A_VOTING_MEMBER",
+  // No session on an authenticated route (401). Already emitted by the live
+  // /api/me, /api/markets, and /api/positions handlers.
+  "UNAUTHENTICATED",
+  // ---- Issue #4 (buy position lots from market detail) ----
+  // Unparseable JSON or a non-object request body (400).
+  "INVALID_BODY",
+  // marketId missing, not a string, or empty (400).
+  "INVALID_MARKET_ID",
+  // marketId not present in the browse cache (404).
+  "MARKET_NOT_FOUND",
+  // Market's cached closed flag is true (409).
+  "MARKET_CLOSED",
+  // Market's cached active flag is false (409).
+  "MARKET_INACTIVE",
+  // outcomeIndex not an integer or out of range for the market's outcomes (400).
+  "INVALID_OUTCOME",
+  // Stake is not an unsigned decimal string with at most 2 fraction digits (400).
+  "INVALID_STAKE",
+  // Cached bestAsk is null or an unusable (non-positive) price (409).
+  "PRICE_UNAVAILABLE"
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

@@ -13,6 +13,7 @@ export type UserRepository = {
   findByUsername(username: string): StoredUser | undefined;
   findById(id: string): StoredUser | undefined;
   markStartingBalanceBannerSeen(id: string): StoredUser | undefined;
+  updateBalance(id: string, balance: number): StoredUser | undefined;
   clear(): void;
 };
 
@@ -61,6 +62,15 @@ export function createMemoryUserRepository(
       }
 
       user.hasSeenStartingBalanceBanner = true;
+      return user;
+    },
+    updateBalance(id, balance) {
+      const user = ids.get(id);
+      if (!user) {
+        return undefined;
+      }
+
+      user.balance = balance;
       return user;
     },
     clear() {

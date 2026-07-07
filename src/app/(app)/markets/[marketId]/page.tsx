@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { BuyPanel } from "@/components/markets/buy-panel";
 import { currentUserOrRedirect } from "@/server/authenticated-user";
 import { marketCacheRepository } from "@/server/markets";
 
@@ -51,18 +52,22 @@ export default async function MarketDetailPage({
             </div>
           </section>
 
-          <aside className="rounded-md border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-950">Market</h2>
-            <dl className="mt-3 space-y-3 text-sm">
-              <DetailRow label="Status" value={market.closed ? "Closed" : "Open"} />
-              <DetailRow label="Sell at" value={market.bestBid ?? "n/a"} />
-              <DetailRow label="Buy at" value={market.bestAsk ?? "n/a"} />
-              <DetailRow label="Last trade" value={market.lastTradePrice ?? "n/a"} />
-              <DetailRow label="Volume" value={formatCompact(market.volume)} />
-              <DetailRow label="Resolves" value={formatDate(market.endDate)} />
-              <DetailRow label="Synced" value={formatDateTime(market.lastSyncedAt)} />
-            </dl>
-          </aside>
+          <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+            <BuyPanel market={market} balance={user.balance} />
+
+            <aside className="rounded-md border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold text-slate-950">Market</h2>
+              <dl className="mt-3 space-y-3 text-sm">
+                <DetailRow label="Status" value={market.closed ? "Closed" : "Open"} />
+                <DetailRow label="Sell at" value={market.bestBid ?? "n/a"} />
+                <DetailRow label="Buy at" value={market.bestAsk ?? "n/a"} />
+                <DetailRow label="Last trade" value={market.lastTradePrice ?? "n/a"} />
+                <DetailRow label="Volume" value={formatCompact(market.volume)} />
+                <DetailRow label="Resolves" value={formatDate(market.endDate)} />
+                <DetailRow label="Synced" value={formatDateTime(market.lastSyncedAt)} />
+              </dl>
+            </aside>
+          </div>
         </div>
       </section>
     </AppShell>
