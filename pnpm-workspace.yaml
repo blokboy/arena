@@ -1,0 +1,13 @@
+allowBuilds:
+  # Needed to actually generate PrismaClient — without this, pnpm blocks
+  # their postinstall scripts by default, and @prisma/client ships as an
+  # empty stub with no PrismaClient export (this is what broke the deploy).
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  # Unrelated to Prisma; left unapproved (app works without their build
+  # scripts having run) rather than blanket-approving everything pending.
+  esbuild: false
+  msw: false
+  sharp: false
+  unrs-resolver: false

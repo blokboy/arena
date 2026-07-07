@@ -22,6 +22,7 @@
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:api && pnpm test:components"
   },
   "dependencies": {
+    "@auth/core": "^0.41.2",
     "@prisma/client": "^6.1.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
