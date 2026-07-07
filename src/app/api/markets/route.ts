@@ -5,7 +5,7 @@ import { currentUserFromHeaders } from "@/server/current-user";
 import { marketCacheRepository } from "@/server/markets";
 
 export async function GET(request: Request) {
-  const user = currentUserFromHeaders(request.headers);
+  const user = await currentUserFromHeaders(request.headers);
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
   }
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   try {
     const category = marketCategoryFromSlug(categorySlug);
     return NextResponse.json({
-      events: marketCacheRepository.listEventsByCategory(category)
+      events: await marketCacheRepository.listEventsByCategory(category)
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_CATEGORY") {

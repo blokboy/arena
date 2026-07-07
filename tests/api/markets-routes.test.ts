@@ -9,7 +9,7 @@ import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
 
 describe("markets API", () => {
   test("serves an empty cached category without contacting Gamma", async () => {
-    const user = userRepository.createUser({
+    const user = await userRepository.createUser({
       username: "jules",
       passwordHash: "hashed"
     });
@@ -27,11 +27,11 @@ describe("markets API", () => {
   });
 
   test("serves cached markets for a valid category slug", async () => {
-    const user = userRepository.createUser({
+    const user = await userRepository.createUser({
       username: "mira",
       passwordHash: "hashed"
     });
-    marketCacheRepository.upsertCategoryEvents({
+    await marketCacheRepository.upsertCategoryEvents({
       category: "Politics",
       events: [
         normalizeGammaEvent(binaryGammaEvent(), {
@@ -83,11 +83,11 @@ describe("markets API", () => {
   });
 
   test("serves a cached market detail by Gamma market id", async () => {
-    const user = userRepository.createUser({
+    const user = await userRepository.createUser({
       username: "detail-user",
       passwordHash: "hashed"
     });
-    marketCacheRepository.upsertCategoryEvents({
+    await marketCacheRepository.upsertCategoryEvents({
       category: "Politics",
       events: [
         normalizeGammaEvent(binaryGammaEvent(), {
@@ -119,7 +119,7 @@ describe("markets API", () => {
 
   test("rejects invalid categories and anonymous callers without contacting Gamma", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
-    const user = userRepository.createUser({
+    const user = await userRepository.createUser({
       username: "casey",
       passwordHash: "hashed"
     });

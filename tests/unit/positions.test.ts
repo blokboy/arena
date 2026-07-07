@@ -92,14 +92,14 @@ describe("portfolio position grouping", () => {
 });
 
 describe("buy operation", () => {
-  function createBuyHarness(marketOverrides: Partial<GammaMarket> = {}) {
+  async function createBuyHarness(marketOverrides: Partial<GammaMarket> = {}) {
     const users = createMemoryUserRepository();
     const positions = createMemoryPositionRepository();
     const marketCache = createMemoryMarketCacheRepository();
 
     const event = binaryGammaEvent();
     event.markets = [{ ...event.markets?.[0], ...marketOverrides }];
-    marketCache.upsertCategoryEvents({
+    await marketCache.upsertCategoryEvents({
       category: "Politics",
       events: [
         normalizeGammaEvent(event, {
@@ -109,7 +109,7 @@ describe("buy operation", () => {
       ]
     });
 
-    const user = users.createUser({ username: "trader", passwordHash: "hashed" });
+    const user = await users.createUser({ username: "trader", passwordHash: "hashed" });
     const buy = (input: { marketId?: string; outcomeIndex?: number; stake?: string } = {}) =>
       buyPositionLot({
         user,
@@ -125,10 +125,10 @@ describe("buy operation", () => {
     return { user, users, positions, buy };
   }
 
-  it("buys at bestAsk, debits the balance, and records an OPEN lot", () => {
-    const { user, buy, positions } = createBuyHarness();
+  it("buys at bestAsk, debits the balance, and records an OPEN lot", async () => {
+    const { user, buy, positions } = await createBuyHarness();
 
-    const result = buy({ stake: "250" });
+    const result = await buy({ stake: "250" });
 
     expect(result.balance).toBe(750);
     expect(user.balance).toBe(750);
@@ -146,17 +146,17 @@ describe("buy operation", () => {
       entryPrice: "0.64",
       purchasedAt: "2026-07-06T12:34:56.000Z"
     });
-    expect(positions.listLotsByUserId(user.id)).toEqual([result.lot]);
+    expect(await positions.listLotsByUserId(user.id)).toEqual([result.lot]);
   });
 
-  it("creates an independent lot per buy — repeat buys are never merged", () => {
-    const { user, buy, positions } = createBuyHarness();
+  it("creates an independent lot per buy — repeat buys are never merged", async () => {
+    const { user, buy, positions } = await createBuyHarness();
 
-    const first = buy({ stake: "100" });
-    const second = buy({ stake: "100" });
-    const opposite = buy({ stake: "100", outcomeIndex: 1 });
+    const first = await buy({ stake: "100" });
+    const second = await buy({ stake: "100" });
+    await buy({ stake: "100", outcomeIndex: 1 });
 
-    const lots = positions.listLotsByUserId(user.id);
+    const lots = await positions.listLotsByUserId(user.id);
     expect(lots).toHaveLength(3);
     expect(new Set(lots.map((lot) => lot.id)).size).toBe(3);
     expect(first.lot.id).not.toBe(second.lot.id);
@@ -164,48 +164,48 @@ describe("buy operation", () => {
     expect(user.balance).toBe(700);
   });
 
-  it("rejects unknown markets", () => {
-    const { buy } = createBuyHarness();
-    expect(() => buy({ marketId: "market-unknown" })).toThrow("MARKET_NOT_FOUND");
+  it("rejects unknown markets", async () => {
+    const { buy } = await createBuyHarness();
+    await expect(buy({ marketId: "market-unknown" })).rejects.toThrow("MARKET_NOT_FOUND");
   });
 
-  it("rejects closed and inactive markets", () => {
-    const closed = createBuyHarness({ closed: true });
-    expect(() => closed.buy()).toThrow("MARKET_CLOSED");
+  it("rejects closed and inactive markets", async () => {
+    const closed = await createBuyHarness({ closed: true });
+    await expect(closed.buy()).rejects.toThrow("MARKET_CLOSED");
 
-    const inactive = createBuyHarness({ active: false });
-    expect(() => inactive.buy()).toThrow("MARKET_INACTIVE");
+    const inactive = await createBuyHarness({ active: false });
+    await expect(inactive.buy()).rejects.toThrow("MARKET_INACTIVE");
   });
 
-  it("rejects outcome indexes outside the market's outcomes", () => {
-    const { buy } = createBuyHarness();
-    expect(() => buy({ outcomeIndex: -1 })).toThrow("INVALID_OUTCOME");
-    expect(() => buy({ outcomeIndex: 2 })).toThrow("INVALID_OUTCOME");
-    expect(() => buy({ outcomeIndex: 0.5 })).toThrow("INVALID_OUTCOME");
+  it("rejects outcome indexes outside the market's outcomes", async () => {
+    const { buy } = await createBuyHarness();
+    await expect(buy({ outcomeIndex: -1 })).rejects.toThrow("INVALID_OUTCOME");
+    await expect(buy({ outcomeIndex: 2 })).rejects.toThrow("INVALID_OUTCOME");
+    await expect(buy({ outcomeIndex: 0.5 })).rejects.toThrow("INVALID_OUTCOME");
   });
 
-  it("rejects malformed, non-positive, and sub-cent stakes", () => {
-    const { buy } = createBuyHarness();
-    expect(() => buy({ stake: "abc" })).toThrow("INVALID_STAKE");
-    expect(() => buy({ stake: "-5" })).toThrow("INVALID_STAKE");
-    expect(() => buy({ stake: "0" })).toThrow("INVALID_STAKE");
-    expect(() => buy({ stake: "1.234" })).toThrow("INVALID_STAKE");
+  it("rejects malformed, non-positive, and sub-cent stakes", async () => {
+    const { buy } = await createBuyHarness();
+    await expect(buy({ stake: "abc" })).rejects.toThrow("INVALID_STAKE");
+    await expect(buy({ stake: "-5" })).rejects.toThrow("INVALID_STAKE");
+    await expect(buy({ stake: "0" })).rejects.toThrow("INVALID_STAKE");
+    await expect(buy({ stake: "1.234" })).rejects.toThrow("INVALID_STAKE");
   });
 
-  it("rejects markets without a usable bestAsk", () => {
-    const missing = createBuyHarness({ bestAsk: null });
-    expect(() => missing.buy()).toThrow("PRICE_UNAVAILABLE");
+  it("rejects markets without a usable bestAsk", async () => {
+    const missing = await createBuyHarness({ bestAsk: null });
+    await expect(missing.buy()).rejects.toThrow("PRICE_UNAVAILABLE");
 
-    const zero = createBuyHarness({ bestAsk: "0" });
-    expect(() => zero.buy()).toThrow("PRICE_UNAVAILABLE");
+    const zero = await createBuyHarness({ bestAsk: "0" });
+    await expect(zero.buy()).rejects.toThrow("PRICE_UNAVAILABLE");
   });
 
-  it("rejects stakes over the balance without touching balance or lots", () => {
-    const { user, buy, positions } = createBuyHarness();
+  it("rejects stakes over the balance without touching balance or lots", async () => {
+    const { user, buy, positions } = await createBuyHarness();
 
-    expect(() => buy({ stake: "1000.01" })).toThrow("INSUFFICIENT_BALANCE");
+    await expect(buy({ stake: "1000.01" })).rejects.toThrow("INSUFFICIENT_BALANCE");
 
     expect(user.balance).toBe(1000);
-    expect(positions.listLotsByUserId(user.id)).toEqual([]);
+    expect(await positions.listLotsByUserId(user.id)).toEqual([]);
   });
 });

@@ -7,7 +7,7 @@ import { userRepository } from "@/server/users";
 describe("registration persistence seam", () => {
   test("registration stores starting balance and never stores plaintext password", async () => {
     const passwordHash = await hashPassword("long-enough");
-    const user = userRepository.createUser({ username: "jules", passwordHash });
+    const user = await userRepository.createUser({ username: "jules", passwordHash });
 
     expect(user.balance).toBe(STARTING_BALANCE);
     expect(user.passwordHash).not.toBe("long-enough");
@@ -16,13 +16,13 @@ describe("registration persistence seam", () => {
 
   test("new users start with the signup balance banner unseen until it is marked seen", async () => {
     const passwordHash = await hashPassword("long-enough");
-    const user = userRepository.createUser({ username: "mira", passwordHash });
+    const user = await userRepository.createUser({ username: "mira", passwordHash });
 
     expect(user.hasSeenStartingBalanceBanner).toBe(false);
-    expect(userRepository.markStartingBalanceBannerSeen(user.id)).toMatchObject({
+    await expect(userRepository.markStartingBalanceBannerSeen(user.id)).resolves.toMatchObject({
       id: user.id,
       hasSeenStartingBalanceBanner: true
     });
-    expect(userRepository.findById(user.id)?.hasSeenStartingBalanceBanner).toBe(true);
+    expect((await userRepository.findById(user.id))?.hasSeenStartingBalanceBanner).toBe(true);
   });
 });

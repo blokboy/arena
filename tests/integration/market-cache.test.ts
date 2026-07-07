@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { CATEGORY_TAGS, MARKET_CATEGORIES, type MarketCategory } from "@/domain/markets";
 import {
-  createFileMarketCacheRepository,
+  createPrismaMarketCacheRepository,
   marketCacheRepository,
   syncAllMarketCategories,
   syncMarketCategory
@@ -14,7 +14,8 @@ describe("market cache sync", () => {
     "retrieves top 10 open %s events by volume through an injected Gamma client",
     async (category: MarketCategory) => {
       const gammaClient = {
-        fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()])
+        fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()]),
+        fetchMarketById: vi.fn()
       };
 
       await syncMarketCategory({
@@ -35,7 +36,8 @@ describe("market cache sync", () => {
 
   test("syncs Gamma events for a category into the local browse cache", async () => {
     const gammaClient = {
-      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()])
+      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()]),
+      fetchMarketById: vi.fn()
     };
 
     await syncMarketCategory({
@@ -44,7 +46,7 @@ describe("market cache sync", () => {
       now: new Date("2026-07-06T12:00:00.000Z")
     });
 
-    expect(marketCacheRepository.listEventsByCategory("Politics")).toMatchObject([
+    expect(await marketCacheRepository.listEventsByCategory("Politics")).toMatchObject([
       {
         gammaId: "event-election-2028",
         category: "Politics",
@@ -66,8 +68,20 @@ describe("market cache sync", () => {
   });
 
   test("syncs all PRD categories into the local browse cache", async () => {
+    // Each category gets its own distinct event/market gammaId — a real
+    // Gamma event belongs to exactly one of our curated categories
+    // (CachedEvent.category is a scalar column, not a multi-category set),
+    // so reusing one fixture's gammaId across all 9 calls would just
+    // overwrite the same row's category 9 times instead of producing 9
+    // independently-cached events.
     const gammaClient = {
-      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()])
+      fetchEventsByTag: vi.fn().mockImplementation((tagId: number) => {
+        const event = binaryGammaEvent();
+        event.id = `event-tag-${tagId}`;
+        event.markets = [{ ...event.markets?.[0], id: `market-tag-${tagId}` }];
+        return Promise.resolve([event]);
+      }),
+      fetchMarketById: vi.fn()
     };
 
     const result = await syncAllMarketCategories({
@@ -78,29 +92,28 @@ describe("market cache sync", () => {
     expect(result.syncedCategories).toEqual(MARKET_CATEGORIES);
     expect(gammaClient.fetchEventsByTag).toHaveBeenCalledTimes(MARKET_CATEGORIES.length);
     for (const category of MARKET_CATEGORIES) {
-      expect(marketCacheRepository.listEventsByCategory(category)).toHaveLength(1);
+      expect(await marketCacheRepository.listEventsByCategory(category)).toHaveLength(1);
     }
   });
 
-  test("can persist synced category events to a local cache file", async () => {
-    const filePath = "/tmp/arena-market-cache-test.json";
-    const repository = createFileMarketCacheRepository(filePath);
-    repository.clear();
+  test("persists synced category events durably — a fresh repository instance against the same database sees them", async () => {
     const gammaClient = {
-      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()])
+      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()]),
+      fetchMarketById: vi.fn()
     };
 
     await syncMarketCategory({
       category: "Politics",
       gammaClient,
-      now: new Date("2026-07-06T12:00:00.000Z"),
-      repository
+      now: new Date("2026-07-06T12:00:00.000Z")
     });
 
-    const reloadedRepository = createFileMarketCacheRepository(filePath);
-    expect(reloadedRepository.listEventsByCategory("Politics")[0]?.gammaId).toBe(
-      "event-election-2028"
-    );
-    repository.clear();
+    // A brand-new repository instance (no shared in-process state with the
+    // one syncMarketCategory used above) still sees the synced data, because
+    // both are backed by the same real Postgres database, not a per-process
+    // cache.
+    const freshRepository = createPrismaMarketCacheRepository();
+    const events = await freshRepository.listEventsByCategory("Politics");
+    expect(events[0]?.gammaId).toBe("event-election-2028");
   });
 });

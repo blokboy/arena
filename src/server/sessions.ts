@@ -1,46 +1,35 @@
-import { randomUUID } from "node:crypto";
+import { encode, getToken } from "@auth/core/jwt";
 
-export const SESSION_COOKIE_NAME = "arena_session";
+// Matches Auth.js v5's own default (unprefixed — no `__Secure-` prefix,
+// since this app doesn't branch cookie naming by environment) session
+// cookie name and salt convention (salt = cookie name), so a token minted
+// here is decodable exactly the same way Auth.js's own session mechanism
+// would decode it, and vice versa. Sessions are stateless JWTs — there is
+// no server-side session store to clear/expire manually.
+export const SESSION_COOKIE_NAME = "authjs.session-token";
 
-const globalMemory = globalThis as typeof globalThis & {
-  __arenaSessions?: Map<string, string>;
-};
-
-const sessions = (globalMemory.__arenaSessions ??= new Map<string, string>());
-
-export function createSession(userId: string) {
-  const token = randomUUID();
-  sessions.set(token, userId);
-  return token;
-}
-
-export function deleteSession(token: string | undefined) {
-  if (!token) {
-    return;
+function requireSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    throw new Error("AUTH_SECRET is not set");
   }
-  sessions.delete(token);
+  return secret;
 }
 
-export function userIdForSession(token: string | undefined) {
-  if (!token) {
-    return undefined;
-  }
-  return sessions.get(token);
+export async function createSessionToken(userId: string): Promise<string> {
+  return encode({
+    secret: requireSecret(),
+    salt: SESSION_COOKIE_NAME,
+    token: { sub: userId }
+  });
 }
 
-export function clearSessions() {
-  sessions.clear();
-}
-
-export function sessionCookieFromHeaders(headers: Headers) {
-  const cookie = headers.get("cookie");
-  if (!cookie) {
-    return undefined;
-  }
-
-  return cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
-    ?.slice(SESSION_COOKIE_NAME.length + 1);
+export async function userIdForHeaders(headers: Headers): Promise<string | undefined> {
+  const token = await getToken({
+    req: { headers },
+    secret: requireSecret(),
+    salt: SESSION_COOKIE_NAME,
+    cookieName: SESSION_COOKIE_NAME
+  });
+  return token?.sub;
 }

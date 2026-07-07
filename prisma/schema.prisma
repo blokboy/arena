@@ -49,24 +49,28 @@ model CachedEvent {
   gammaId      String   @unique
   category     String
   title        String
+  slug         String
   volume       Decimal  @default(0) @db.Decimal(18, 6)
   lastSyncedAt DateTime
   markets      CachedMarket[]
 }
 
 model CachedMarket {
-  id            String   @id @default(cuid())
-  gammaId       String   @unique
-  eventId       String
-  question      String
-  outcomes      Json
-  outcomePrices Json
-  bestBid       Decimal  @db.Decimal(18, 6)
-  bestAsk       Decimal  @db.Decimal(18, 6)
-  active        Boolean  @default(true)
-  closed        Boolean  @default(false)
-  endDate       DateTime
-  lastSyncedAt  DateTime
+  id             String    @id @default(cuid())
+  gammaId        String    @unique
+  eventId        String
+  question       String
+  slug           String
+  outcomes       Json
+  outcomePrices  Json
+  bestBid        Decimal?  @db.Decimal(18, 6)
+  bestAsk        Decimal?  @db.Decimal(18, 6)
+  lastTradePrice Decimal?  @db.Decimal(18, 6)
+  active         Boolean   @default(true)
+  closed         Boolean   @default(false)
+  endDate        DateTime?
+  volume         Decimal   @default(0) @db.Decimal(18, 6)
+  lastSyncedAt   DateTime
 
   event     CachedEvent @relation(fields: [eventId], references: [id])
   positions Position[]
@@ -85,6 +89,7 @@ model Position {
   status          PositionStatus @default(OPEN)
   exitPrice       Decimal?       @db.Decimal(18, 6)
   realizedPoints  Decimal?       @db.Decimal(18, 6)
+  exitedAt        DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

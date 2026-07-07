@@ -1,0 +1,29 @@
+# Local dev Postgres — persistent, unlike docker-compose.test.yml's
+# throwaway tmpfs test container.
+#
+#   docker compose up -d     # start
+#   pnpm prisma migrate dev  # apply schema
+#   docker compose down      # stop (data survives; add -v to also wipe it)
+#
+# Postgres 16 to match production (Neon/Vercel Postgres) and the test
+# container. Standard port 5432 — this isn't meant to run alongside the test
+# container on 5433, but doesn't collide with it either way.
+services:
+  postgres-dev:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: arena
+      POSTGRES_PASSWORD: arena
+      POSTGRES_DB: arena_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - arena-dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena -d arena_dev"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  arena-dev-postgres:
