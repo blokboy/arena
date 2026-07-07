@@ -62,8 +62,7 @@ export function AuthForm({ mode, initialError }: AuthFormProps) {
               }
             );
             const body = (await response.json().catch(() => undefined)) as
-              | { error?: { code?: AuthErrorCode } }
-              | undefined;
+              { error?: { code?: AuthErrorCode } } | undefined;
 
             if (!response.ok) {
               setError(body?.error?.code ?? "INVALID_CREDENTIALS");
