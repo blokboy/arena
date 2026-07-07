@@ -1,0 +1,15 @@
+{
+  "id": "500003",
+  "question": "Will the postponed match be played on Sunday?",
+  "slug": "postponed-match-sunday",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "outcomePrices": "[\"0.5\", \"0.5\"]",
+  "bestBid": 0,
+  "bestAsk": 0,
+  "lastTradePrice": 0.5,
+  "active": false,
+  "closed": true,
+  "endDate": "2026-06-28T18:00:00Z",
+  "endDateIso": "2026-06-28",
+  "volume": "12000.00"
+}

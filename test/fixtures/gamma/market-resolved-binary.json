@@ -1,0 +1,15 @@
+{
+  "id": "500002",
+  "question": "Will the bill pass before July?",
+  "slug": "bill-pass-before-july",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "outcomePrices": "[\"1\", \"0\"]",
+  "bestBid": 0,
+  "bestAsk": 0,
+  "lastTradePrice": 1,
+  "active": false,
+  "closed": true,
+  "endDate": "2026-06-30T23:59:00Z",
+  "endDateIso": "2026-06-30",
+  "volume": "845000.00"
+}

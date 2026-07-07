@@ -1,0 +1,16 @@
+{
+  "__note": "PROVISIONAL SHAPE — PRD Part III §6.1 flags a pre-implementation verification task: confirm against a real resolved multi-outcome Polymarket market that outcomePrices collapses to exactly one '1' and the rest '0', the way binary markets do. Replace this fixture with a recorded real response before building the settlement job; the voided-market detection heuristic depends on it.",
+  "id": "500004",
+  "question": "Who wins the party primary?",
+  "slug": "party-primary-winner",
+  "outcomes": "[\"Candidate A\", \"Candidate B\", \"Candidate C\", \"Candidate D\"]",
+  "outcomePrices": "[\"0\", \"1\", \"0\", \"0\"]",
+  "bestBid": 0,
+  "bestAsk": 0,
+  "lastTradePrice": 1,
+  "active": false,
+  "closed": true,
+  "endDate": "2026-06-15T02:00:00Z",
+  "endDateIso": "2026-06-15",
+  "volume": "2400000.00"
+}
