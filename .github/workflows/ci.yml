@@ -85,6 +85,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma validate
+      - run: pnpm exec prisma migrate deploy
       - run: pnpm test:integration
       - run: pnpm test:api
 
@@ -118,6 +119,20 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arena
+          POSTGRES_PASSWORD: arena
+          POSTGRES_DB: arena_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arena -d arena_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql://arena:arena@localhost:5432/arena_e2e
       AUTH_SECRET: test-auth-secret
@@ -132,6 +147,7 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma migrate deploy
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
