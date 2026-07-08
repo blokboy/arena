@@ -18,7 +18,9 @@ test("leaderboard ranks every user, keeps MEAN synthetic and separate, and surfa
   // Seed a second, dormant signup directly via the API using an isolated
   // request context (the top-level `request` fixture, not `page.request`)
   // so it doesn't clobber the page's own session cookie.
-  const dormantUsername = `e2e-dormant-${Date.now()}`;
+  // Kept short: the username regex caps at 24 chars (`^[a-z0-9_-]{3,24}$`),
+  // and this prefix + Date.now()'s 13 digits must fit under that.
+  const dormantUsername = `e2e-dorm-${Date.now()}`;
   const dormantResponse = await request.post("/api/auth/register", {
     data: { username: dormantUsername, password, confirmPassword: password }
   });
