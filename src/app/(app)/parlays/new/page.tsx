@@ -1,13 +1,13 @@
 import { AppShell } from "@/components/app-shell";
-import { ParlaysClient } from "@/components/parlays/parlays-client";
+import { ParlayCreateFlow } from "@/components/parlays/parlay-create-flow";
 import { currentUserOrRedirect } from "@/server/authenticated-user";
 
-export default async function ParlaysPage() {
+export default async function CreateParlayPage() {
   const user = await currentUserOrRedirect();
 
   return (
     <AppShell currentPath="/parlays" user={user}>
-      <ParlaysClient />
+      <ParlayCreateFlow currentUser={{ id: user.id, username: user.username }} />
     </AppShell>
   );
 }

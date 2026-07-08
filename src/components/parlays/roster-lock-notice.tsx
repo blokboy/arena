@@ -16,7 +16,10 @@ export function RosterLockNotice({ className }: RosterLockNoticeProps) {
         className
       )}
     >
-      <p className="text-sm font-semibold">Members can't be added later.</p>
+      <p className="text-sm font-semibold">Members can&apos;t be added later.</p>
+      <p className="mt-1 text-sm leading-6">
+        Members can&apos;t be added later — only added members can append legs.
+      </p>
       <p className="mt-1 text-sm leading-6">
         This roster is fixed at creation. It is a one-time, consequential choice: only the
         selected members can append legs later.

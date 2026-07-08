@@ -1,12 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import type { EligiblePositionLot, SelectedCommitments } from "@/components/parlays/types";
 
-type EligiblePositionCommitSelectorProps = {
+type ControlledProps = {
   lots: readonly EligiblePositionLot[];
   selectedCommitments: SelectedCommitments;
   disabled?: boolean;
@@ -15,14 +15,63 @@ type EligiblePositionCommitSelectorProps = {
   onCommitmentChange?: (positionId: string, shares: string) => void;
 };
 
+type LegacyPosition = {
+  positionId: string;
+  marketQuestion: string;
+  outcomeLabel: string;
+  entryPrice: string;
+  availableShares: string;
+};
+
+type LegacyProps = {
+  positions: readonly LegacyPosition[];
+  onChange?: (commitments: Array<{ positionId: string; shares: string }>) => void;
+};
+
+type EligiblePositionCommitSelectorProps = ControlledProps | LegacyProps;
+
 export function EligiblePositionCommitSelector({
-  lots,
-  selectedCommitments,
-  disabled,
-  className,
-  errorMessage,
-  onCommitmentChange
+  ...props
 }: EligiblePositionCommitSelectorProps) {
+  const isLegacyMode = "positions" in props;
+  const [legacyCommitments, setLegacyCommitments] = useState<SelectedCommitments>({});
+
+  const lots = useMemo<readonly EligiblePositionLot[]>(
+    () =>
+      isLegacyMode
+        ? props.positions.map((position) => ({
+            positionId: position.positionId,
+            marketId: "",
+            marketQuestion: position.marketQuestion,
+            outcomeIndex: 0,
+            outcomeLabel: position.outcomeLabel,
+            entryPrice: position.entryPrice,
+            availableShares: position.availableShares
+          }))
+        : props.lots,
+    [isLegacyMode, props]
+  );
+
+  const selectedCommitments = isLegacyMode ? legacyCommitments : props.selectedCommitments;
+  const disabled = isLegacyMode ? false : props.disabled;
+  const className = isLegacyMode ? undefined : props.className;
+  const errorMessage = isLegacyMode ? null : props.errorMessage;
+
+  useEffect(() => {
+    if (!isLegacyMode) {
+      return;
+    }
+
+    const commitments = Object.entries(legacyCommitments)
+      .filter(([positionId, shares]) => {
+        const lot = lots.find((candidate) => candidate.positionId === positionId);
+        return lot && shares.trim().length > 0 && getCommitmentError(shares, lot) === null;
+      })
+      .map(([positionId, shares]) => ({ positionId, shares }));
+
+    props.onChange?.(commitments);
+  }, [isLegacyMode, legacyCommitments, lots, props]);
+
   const selectedLots = lots.filter((lot) => Number(selectedCommitments[lot.positionId] ?? 0) > 0);
   const selectedShares = selectedLots.reduce(
     (total, lot) => total + Number(selectedCommitments[lot.positionId] ?? 0),
@@ -46,8 +95,8 @@ export function EligiblePositionCommitSelector({
       </div>
 
       <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        These shares become unavailable after commit. If an earlier leg fails first, this commitment is
-        lost to HOUSE.
+        These shares become unavailable after commit. Committed shares are locked immediately and are
+        lost to HOUSE if an earlier leg fails first.
       </div>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
@@ -65,6 +114,7 @@ export function EligiblePositionCommitSelector({
               const selected = selectedCommitments[lot.positionId] ?? "";
               const selectedNumeric = Number(selected || 0);
               const isSelected = selectedNumeric > 0;
+              const lotError = getCommitmentError(selected, lot);
 
               return (
                 <div
@@ -106,9 +156,20 @@ export function EligiblePositionCommitSelector({
                       inputMode="decimal"
                       min="0"
                       step="any"
+                      aria-label={`Shares to commit for ${lot.positionId || lot.marketQuestion} ${lot.outcomeLabel} ${lot.entryPrice}`}
                       value={selected}
                       disabled={disabled}
-                      onChange={(event) => onCommitmentChange?.(lot.positionId, event.target.value)}
+                      onChange={(event) => {
+                        if (isLegacyMode) {
+                          setLegacyCommitments((current) => ({
+                            ...current,
+                            [lot.positionId]: event.target.value
+                          }));
+                          return;
+                        }
+
+                        props.onCommitmentChange?.(lot.positionId, event.target.value);
+                      }}
                       className={cn(
                         "min-h-11 w-28 rounded-md border border-slate-300 px-3 py-2 text-right text-sm",
                         "focus:border-slate-900 focus:outline-none",
@@ -117,6 +178,11 @@ export function EligiblePositionCommitSelector({
                       )}
                     />
                   </label>
+                  {lotError ? (
+                    <p className="text-sm text-red-700 md:col-start-5 md:text-right">
+                      {lotError}
+                    </p>
+                  ) : null}
                 </div>
               );
             })
@@ -148,4 +214,22 @@ function formatPurchasedAt(value: string) {
     month: "short",
     day: "numeric"
   }).format(new Date(value));
+}
+
+function getCommitmentError(value: string, lot: EligiblePositionLot): string | null {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  if (!/^(?:\d+|\d*\.\d+)$/.test(trimmed) || Number(trimmed) <= 0) {
+    return "Enter a positive share amount.";
+  }
+
+  if (Number(trimmed) > Number(lot.availableShares)) {
+    return `Only ${lot.availableShares} shares available.`;
+  }
+
+  return null;
 }
