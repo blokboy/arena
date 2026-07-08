@@ -14,6 +14,7 @@ export async function currentUserOrRedirect() {
     id: user.id,
     username: user.username,
     balance: user.balance,
-    showStartingBalance: !user.hasSeenStartingBalanceBanner
+    showStartingBalance: !user.hasSeenStartingBalanceBanner,
+    stipendGrantedToday: user.stipendGrantedToday
   };
 }

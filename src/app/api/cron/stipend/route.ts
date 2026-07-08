@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { isAuthorizedCronRequest } from "@/server/cron-auth";
-import { syncAllMarketCategories } from "@/server/markets";
+import { grantDailyBankruptcyStipends } from "@/server/settlement";
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: { code: "UNAUTHORIZED_CRON" } }, { status: 401 });
   }
 
-  const result = await syncAllMarketCategories({ now: new Date() });
+  const result = await grantDailyBankruptcyStipends({ now: new Date() });
 
   return NextResponse.json({
     ok: true,
-    syncedCategories: result.syncedCategories
+    dayKey: result.dayKey,
+    grantedUserIds: result.grantedUserIds
   });
 }

@@ -5,24 +5,19 @@ import {
   normalizeGammaMarket,
   type CachedEvent,
   type CachedMarket,
-  type GammaEvent,
-  type GammaMarket,
   type MarketCategory
 } from "@/domain/markets";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
-
-export type GammaDiscoveryOptions = {
-  active: boolean;
-  closed: boolean;
-  order: "volume";
-  ascending: boolean;
-  limit: number;
-};
-
-export type GammaClient = {
-  fetchEventsByTag(tagId: number, options: GammaDiscoveryOptions): Promise<GammaEvent[]>;
-  fetchMarketById(gammaId: string): Promise<GammaMarket>;
-};
+import {
+  gammaClient,
+  resetGammaRandomForTesting,
+  resetGammaSleepForTesting,
+  type GammaClient,
+  type GammaDiscoveryOptions,
+  type GammaRequestPurpose,
+  setGammaRandomForTesting,
+  setGammaSleepForTesting
+} from "@/server/gamma-client";
 
 export type MarketCacheRepository = {
   upsertCategoryEvents(input: { category: MarketCategory; events: CachedEvent[] }): Promise<void>;
@@ -258,39 +253,6 @@ export const TOP_VOLUME_MARKET_DISCOVERY: GammaDiscoveryOptions = {
   limit: 10
 };
 
-const GAMMA_API_BASE_URL = "https://gamma-api.polymarket.com";
-
-export const gammaClient: GammaClient = {
-  async fetchEventsByTag(tagId, options) {
-    const url = new URL("/events", GAMMA_API_BASE_URL);
-    url.searchParams.set("tag_id", String(tagId));
-    url.searchParams.set("active", String(options.active));
-    url.searchParams.set("closed", String(options.closed));
-    url.searchParams.set("order", options.order);
-    url.searchParams.set("ascending", String(options.ascending));
-    url.searchParams.set("limit", String(options.limit));
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error("GAMMA_EVENTS_REQUEST_FAILED");
-    }
-
-    const body = (await response.json()) as unknown;
-    if (!Array.isArray(body)) {
-      throw new Error("INVALID_GAMMA_EVENTS_RESPONSE");
-    }
-    return body as GammaEvent[];
-  },
-  async fetchMarketById(gammaId) {
-    const url = new URL(`/markets/${gammaId}`, GAMMA_API_BASE_URL);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error("GAMMA_MARKET_REQUEST_FAILED");
-    }
-    return (await response.json()) as GammaMarket;
-  }
-};
-
 let configuredGammaClient: GammaClient = gammaClient;
 
 export function setMarketGammaClientForTesting(client: GammaClient) {
@@ -301,6 +263,9 @@ export function resetMarketGammaClientForTesting() {
   configuredGammaClient = gammaClient;
 }
 
+export { setGammaSleepForTesting, resetGammaSleepForTesting };
+export { setGammaRandomForTesting, resetGammaRandomForTesting };
+
 export async function syncMarketCategory(input: {
   category: MarketCategory;
   gammaClient?: GammaClient;
@@ -309,9 +274,13 @@ export async function syncMarketCategory(input: {
 }) {
   const repository = input.repository ?? marketCacheRepository;
   const client = input.gammaClient ?? configuredGammaClient;
-  const events = await client.fetchEventsByTag(getCategoryTag(input.category).tagId, {
-    ...TOP_VOLUME_MARKET_DISCOVERY
-  });
+  const events = await client.fetchEventsByTag(
+    getCategoryTag(input.category).tagId,
+    {
+      ...TOP_VOLUME_MARKET_DISCOVERY
+    },
+    { purpose: "cron" }
+  );
 
   await repository.upsertCategoryEvents({
     category: input.category,
@@ -332,13 +301,25 @@ export async function syncAllMarketCategories(input: {
   const syncedCategories: MarketCategory[] = [];
 
   for (const category of MARKET_CATEGORIES) {
-    await syncMarketCategory({
-      category,
-      gammaClient: input.gammaClient,
-      now: input.now,
-      repository: input.repository
-    });
-    syncedCategories.push(category);
+    try {
+      await syncMarketCategory({
+        category,
+        gammaClient: input.gammaClient,
+        now: input.now,
+        repository: input.repository
+      });
+      syncedCategories.push(category);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "GAMMA_RATE_LIMITED" ||
+          error.message === "GAMMA_REMOTE_RATE_LIMITED")
+      ) {
+        continue;
+      }
+
+      throw error;
+    }
   }
 
   return { syncedCategories };
@@ -351,36 +332,56 @@ export async function syncAllMarketCategories(input: {
 // cadence (see docs/prds/points-prediction-market.md).
 const MARKET_REFRESH_TTL_MS = 5_000;
 
+const inFlightMarketRefreshes = new Map<string, Promise<CachedMarket>>();
+
 export async function refreshMarketIfStale(input: {
   market: CachedMarket;
   now: Date;
   gammaClient?: GammaClient;
   repository?: MarketCacheRepository;
+  force?: boolean;
+  throwOnError?: boolean;
+  purpose?: GammaRequestPurpose;
 }): Promise<CachedMarket> {
   const ageMs = input.now.getTime() - new Date(input.market.lastSyncedAt).getTime();
-  if (ageMs < MARKET_REFRESH_TTL_MS) {
+  if (!input.force && ageMs < MARKET_REFRESH_TTL_MS) {
     return input.market;
+  }
+
+  const cachedRefresh = inFlightMarketRefreshes.get(input.market.gammaId);
+  if (cachedRefresh) {
+    return cachedRefresh;
   }
 
   const repository = input.repository ?? marketCacheRepository;
   const client = input.gammaClient ?? configuredGammaClient;
+  const refreshPromise = (async () => {
+    try {
+      const gammaMarket = await client.fetchMarketById(input.market.gammaId, {
+        purpose: input.purpose ?? "trade"
+      });
+      const refreshed = normalizeGammaMarket(gammaMarket, {
+        eventGammaId: input.market.eventGammaId,
+        eventTitle: input.market.eventTitle,
+        category: input.market.category,
+        lastSyncedAt: input.now.toISOString()
+      });
 
-  let gammaMarket: GammaMarket;
-  try {
-    gammaMarket = await client.fetchMarketById(input.market.gammaId);
-  } catch {
-    // Serve the last-cached price rather than failing the read/trade
-    // (PRD Part III §6.3: graceful degradation over hard failure).
-    return input.market;
-  }
+      await repository.upsertMarket(refreshed);
+      return refreshed;
+    } catch (error) {
+      if (input.throwOnError) {
+        throw error;
+      }
 
-  const refreshed = normalizeGammaMarket(gammaMarket, {
-    eventGammaId: input.market.eventGammaId,
-    eventTitle: input.market.eventTitle,
-    category: input.market.category,
-    lastSyncedAt: input.now.toISOString()
-  });
+      // Serve the last-cached price rather than failing the read/trade
+      // (PRD Part III §6.3: graceful degradation over hard failure).
+      return input.market;
+    } finally {
+      inFlightMarketRefreshes.delete(input.market.gammaId);
+    }
+  })();
 
-  await repository.upsertMarket(refreshed);
-  return refreshed;
+  inFlightMarketRefreshes.set(input.market.gammaId, refreshPromise);
+  return refreshPromise;
 }

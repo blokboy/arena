@@ -177,6 +177,7 @@ type PortfolioPageProps = {
 
 ### Layout rules
 
+- If the bankruptcy stipend was granted for the current UTC day, show a dismissible `StipendNotice` above the open positions section.
 - Primary section order: `Open positions`, `Settled positions`, `Your parlays`.
 - Desktop uses tables or table-like rows.
 - Mobile uses grouped cards with the same semantic order.
@@ -394,4 +395,3 @@ Recommended build order for the frontend engineer:
 3. Add sell action states and locked-share treatment.
 4. Add sell-all dialog and success/error feedback.
 5. Reuse the same group-row model in the market-detail sidebar.
-

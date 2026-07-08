@@ -9,7 +9,7 @@ export default async function PortfolioPage() {
     <AppShell currentPath="/portfolio" user={user}>
       <h1 className="text-2xl font-semibold">Portfolio</h1>
       <div className="mt-4">
-        <PortfolioClient />
+        <PortfolioClient stipendGrantedToday={user.stipendGrantedToday} />
       </div>
     </AppShell>
   );
