@@ -36,14 +36,14 @@ export async function POST(request: Request) {
   };
 
   if (typeof name !== "string" || name.trim().length === 0) {
-    return NextResponse.json({ error: { code: "INVALID_NAME" } }, { status: 400 });
+    return NextResponse.json({ error: { code: "PARLAY_NAME_REQUIRED" } }, { status: 400 });
   }
   if (!Array.isArray(inviteUserIds)) {
-    return NextResponse.json({ error: { code: "INVALID_INVITE_USER_IDS" } }, { status: 400 });
+    return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
   for (const id of inviteUserIds) {
     if (typeof id !== "string") {
-      return NextResponse.json({ error: { code: "INVALID_INVITE_USER_IDS" } }, { status: 400 });
+      return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
     }
   }
 
@@ -57,6 +57,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ parlay }, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message === "INVITEE_NOT_FOUND") {
+        return NextResponse.json({ error: { code: "INVITEE_NOT_FOUND" } }, { status: 404 });
+      }
       return NextResponse.json({ error: { code: error.message } }, { status: 500 });
     }
     throw error;

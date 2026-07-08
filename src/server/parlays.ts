@@ -1,26 +1,25 @@
 import {
   type Commitment,
-  validateCommitments,
   computeCommittedPrincipal,
   sumCommitDecimals
 } from "@/domain/parlays";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
 import { marketCacheRepository, type MarketCacheRepository } from "@/server/markets";
 import { positionRepository, type PositionRepository } from "@/server/positions";
-import { type StoredUser } from "@/server/users";
+import { userRepository } from "@/server/users";
 
 export type ParlayDraftResult = {
   id: string;
   name: string;
   kind: "REGULAR";
   status: "DRAFT";
-  rosterSize: number;
+  memberIds: string[];
 };
 
 export type ParlayLegResult = {
   legId: string;
-  parlayId: string;
-  status: string;
+  parlayStatus: string;
+  legStatus: string;
 };
 
 export type RandomParlaySummary = {
@@ -204,14 +203,20 @@ export async function createDraftParlay(input: {
   const memberIds = [...new Set([input.creatorId, ...input.inviteUserIds])];
 
   if (!shouldUseRealDatabase()) {
-    const id = `parlay_${Date.now()}`;
     return {
-      id,
+      id: `parlay_${Date.now()}`,
       name: input.name,
       kind: "REGULAR",
       status: "DRAFT",
-      rosterSize: memberIds.length
+      memberIds
     };
+  }
+
+  for (const userId of input.inviteUserIds) {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new Error("INVITEE_NOT_FOUND");
+    }
   }
 
   return prisma.$transaction(async (tx) => {
@@ -228,74 +233,50 @@ export async function createDraftParlay(input: {
       name: parlay.name,
       kind: "REGULAR",
       status: "DRAFT",
-      rosterSize: memberIds.length
+      memberIds
     };
   });
 }
 
-export async function createFirstLeg(input: {
-  user: StoredUser;
+export async function addFirstParlayLeg(input: {
   parlayId: string;
+  userId: string;
   marketId: string;
   outcomeIndex: number;
   commitments: Commitment[];
+  now: Date;
   positions?: PositionRepository;
   marketCache?: MarketCacheRepository;
 }): Promise<ParlayLegResult> {
   const positions = input.positions ?? positionRepository;
   const marketCache = input.marketCache ?? marketCacheRepository;
 
-  const market = await marketCache.findMarketByGammaId(input.marketId);
-  if (!market || !market.endDate) {
-    throw new Error("MARKET_NOT_FOUND");
-  }
-  const marketEndDate = new Date(market.endDate);
-  const marketGammaId = market.gammaId;
-
-  const lots = await positions.listOpenLotsByUserMarketOutcome(
-    input.user.id,
-    input.marketId,
-    input.outcomeIndex
-  );
-  if (lots.length === 0) {
-    throw new Error("POSITION_GROUP_NOT_FOUND");
-  }
-
-  validateCommitments({
-    commitments: input.commitments,
-    positions: lots.map((lot) => ({
-      id: lot.id,
-      userId: lot.userId,
-      marketId: lot.marketId,
-      outcomeIndex: lot.outcomeIndex,
-      shares: lot.shares,
-      committedShares: lot.committedShares,
-      stake: lot.stake,
-      status: lot.status
-    })),
-    userId: input.user.id,
-    marketId: input.marketId,
-    outcomeIndex: input.outcomeIndex
-  });
-
   if (!shouldUseRealDatabase()) {
     return {
       legId: `leg_${Date.now()}`,
-      parlayId: input.parlayId,
-      status: "ACTIVE"
+      parlayStatus: "ACTIVE",
+      legStatus: "ACTIVE"
     };
   }
 
   return prisma.$transaction(async (tx) => {
     const parlay = await tx.parlay.findUnique({
       where: { id: input.parlayId },
-      select: { id: true, status: true, kind: true, legs: { select: { id: true } } }
+      select: { id: true, status: true, kind: true, members: { select: { userId: true } } }
     });
     if (!parlay) {
       throw new Error("PARLAY_NOT_FOUND");
     }
     if (parlay.status !== "DRAFT") {
       throw new Error("PARLAY_NOT_DRAFT");
+    }
+    const memberUserIds = new Set(parlay.members.map((m) => m.userId));
+    if (!memberUserIds.has(input.userId)) {
+      throw new Error("NOT_A_MEMBER");
+    }
+
+    if (input.commitments.length === 0) {
+      throw new Error("NO_COMMITMENTS");
     }
 
     const marketRow = await tx.cachedMarket.findUnique({
@@ -305,17 +286,42 @@ export async function createFirstLeg(input: {
     if (!marketRow) {
       throw new Error("MARKET_NOT_FOUND");
     }
+    const marketEndDate = new Date(marketRow.endDate);
+    const marketGammaId = marketRow.gammaId;
+
+    const allLots = await positions.listLotsByUserId(input.userId);
+    const openLots = allLots.filter((lot) => lot.status === "OPEN");
+
+    const lotMap = new Map(openLots.map((l) => [l.id, l]));
+    for (const commit of input.commitments) {
+      const lot = lotMap.get(commit.positionId);
+      if (!lot) {
+        throw new Error("COMMITMENT_POSITION_NOT_FOUND");
+      }
+
+      if (lot.marketId !== input.marketId || lot.outcomeIndex !== input.outcomeIndex) {
+        throw new Error("COMMITMENT_MARKET_MISMATCH");
+      }
+
+      const requested = parseCommitDecimal(commit.shares);
+      const positionShares = parseCommitDecimal(lot.shares);
+      const committed = parseCommitDecimal(lot.committedShares);
+      const availableShares = {
+        value: positionShares.value - committed.value,
+        scale: positionShares.scale
+      };
+      if (requested.value <= 0n || requested.value > availableShares.value) {
+        throw new Error("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
+      }
+    }
 
     for (const commit of input.commitments) {
-      const lot = lots.find((l) => l.id === commit.positionId);
-      if (!lot) {
-        throw new Error("POSITION_NOT_FOUND");
-      }
+      const lot = lotMap.get(commit.positionId)!;
 
       const updated = await tx.position.updateMany({
         where: {
           id: commit.positionId,
-          userId: input.user.id,
+          userId: input.userId,
           status: "OPEN",
           shares: lot.shares,
           committedShares: lot.committedShares
@@ -345,8 +351,7 @@ export async function createFirstLeg(input: {
     const totalShares = sumCommitDecimals(input.commitments.map((c) => c.shares));
     const principals: string[] = [];
     for (const commit of input.commitments) {
-      const lot = lots.find((l) => l.id === commit.positionId);
-      if (!lot) continue;
+      const lot = lotMap.get(commit.positionId)!;
       const principal = computeCommittedPrincipal({
         commitment: commit,
         position: {
@@ -368,15 +373,14 @@ export async function createFirstLeg(input: {
     const stake = await tx.legStake.create({
       data: {
         legId: newLeg.id,
-        userId: input.user.id,
+        userId: input.userId,
         shares: totalShares,
         committedPrincipal: totalPrincipal
       }
     });
 
     for (const commit of input.commitments) {
-      const lot = lots.find((l) => l.id === commit.positionId);
-      if (!lot) continue;
+      const lot = lotMap.get(commit.positionId)!;
       const principal = computeCommittedPrincipal({
         commitment: commit,
         position: {
@@ -408,17 +412,27 @@ export async function createFirstLeg(input: {
 
     return {
       legId: newLeg.id,
-      parlayId: input.parlayId,
-      status: "ACTIVE"
+      parlayStatus: "ACTIVE",
+      legStatus: "ACTIVE"
     };
   });
 }
 
+function parseCommitDecimal(input: string): { value: bigint; scale: number } {
+  const normalized = input.trim();
+  const [integerPart = "0", fractionPart = ""] = normalized.split(".");
+  const digits = `${integerPart}${fractionPart}`.replace(/^0+(?=\d)/, "");
+  return {
+    value: BigInt(digits || "0"),
+    scale: fractionPart.length
+  };
+}
+
 export async function clearParlayData(): Promise<void> {
-  await prisma.rolloverVote.deleteMany();
-  await prisma.legStakeSource.deleteMany();
-  await prisma.legStake.deleteMany();
-  await prisma.parlayMember.deleteMany();
-  await prisma.parlayLeg.deleteMany();
-  await prisma.parlay.deleteMany();
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "RolloverVote" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "LegStakeSource" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "LegStake" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayMember" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayLeg" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Parlay" CASCADE`);
 }

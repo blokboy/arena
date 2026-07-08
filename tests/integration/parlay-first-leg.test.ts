@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 
+import { describe, expect, test } from "vitest";
+
 import { normalizeGammaEvent } from "@/domain/markets";
 import { prisma } from "@/server/db";
 import { marketCacheRepository } from "@/server/markets";
-import { createDraftParlay, createFirstLeg } from "@/server/parlays";
+import { addFirstParlayLeg, createDraftParlay } from "@/server/parlays";
 import { buyPositionLot, positionRepository } from "@/server/positions";
 import { userRepository } from "@/server/users";
 import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
@@ -43,18 +45,17 @@ describe("atomic first-leg creation", () => {
       inviteUserIds: []
     });
 
-    expect(draft.status).toBe("DRAFT");
-
-    const result = await createFirstLeg({
-      user,
+    const result = await addFirstParlayLeg({
+      userId: user.id,
       parlayId: draft.id,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
-      commitments: [{ positionId: lot.id, shares: lot.shares }]
+      commitments: [{ positionId: lot.id, shares: lot.shares }],
+      now: new Date("2026-07-06T13:00:00.000Z")
     });
 
-    expect(result.status).toBe("ACTIVE");
-    expect(result.parlayId).toBe(draft.id);
+    expect(result.parlayStatus).toBe("ACTIVE");
+    expect(result.legStatus).toBe("ACTIVE");
 
     const updatedPosition = await positionRepository.listLotsByUserId(user.id);
     expect(updatedPosition).toHaveLength(1);
@@ -64,7 +65,7 @@ describe("atomic first-leg creation", () => {
 
   test("rejected leg with no commitments persists no leg", async () => {
     await seedCachedPoliticsEvent();
-    const { user, lot } = await seedUserAndPosition();
+    const { user } = await seedUserAndPosition();
 
     const draft = await createDraftParlay({
       name: "No-commit parlay",
@@ -73,12 +74,13 @@ describe("atomic first-leg creation", () => {
     });
 
     await expect(
-      createFirstLeg({
-        user,
+      addFirstParlayLeg({
+        userId: user.id,
         parlayId: draft.id,
         marketId: "market-democrat-win-2028",
         outcomeIndex: 0,
-        commitments: []
+        commitments: [],
+        now: new Date("2026-07-06T13:00:00.000Z")
       })
     ).rejects.toThrow("NO_COMMITMENTS");
 
@@ -101,14 +103,15 @@ describe("atomic first-leg creation", () => {
     const overCommit = String(Number(lot.shares) + 100);
 
     await expect(
-      createFirstLeg({
-        user,
+      addFirstParlayLeg({
+        userId: user.id,
         parlayId: draft.id,
         marketId: "market-democrat-win-2028",
         outcomeIndex: 0,
-        commitments: [{ positionId: lot.id, shares: overCommit }]
+        commitments: [{ positionId: lot.id, shares: overCommit }],
+        now: new Date("2026-07-06T13:00:00.000Z")
       })
-    ).rejects.toThrow("INSUFFICIENT_AVAILABLE_SHARES");
+    ).rejects.toThrow("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
 
     const draftInDb = await prisma.parlay.findUnique({ where: { id: draft.id }, include: { legs: true } });
     expect(draftInDb).not.toBeNull();
@@ -116,25 +119,26 @@ describe("atomic first-leg creation", () => {
     expect(draftInDb!.status).toBe("DRAFT");
   });
 
-  test("rejected leg with wrong market persists no stake changes", async () => {
+  test("rejected leg with wrong outcome persists no stake changes", async () => {
     await seedCachedPoliticsEvent();
     const { user, lot } = await seedUserAndPosition();
 
     const draft = await createDraftParlay({
-      name: "Wrong market parlay",
+      name: "Wrong outcome parlay",
       creatorId: user.id,
       inviteUserIds: []
     });
 
     await expect(
-      createFirstLeg({
-        user,
+      addFirstParlayLeg({
+        userId: user.id,
         parlayId: draft.id,
         marketId: "market-democrat-win-2028",
         outcomeIndex: 1,
-        commitments: [{ positionId: lot.id, shares: lot.shares }]
+        commitments: [{ positionId: lot.id, shares: lot.shares }],
+        now: new Date("2026-07-06T13:00:00.000Z")
       })
-    ).rejects.toThrow("POSITION_WRONG_OUTCOME");
+    ).rejects.toThrow("COMMITMENT_MARKET_MISMATCH");
 
     const unchangedPosition = await positionRepository.findById(lot.id);
     expect(unchangedPosition?.committedShares).toBe("0");
@@ -150,12 +154,13 @@ describe("atomic first-leg creation", () => {
       inviteUserIds: []
     });
 
-    await createFirstLeg({
-      user,
+    await addFirstParlayLeg({
+      userId: user.id,
       parlayId: draft.id,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
-      commitments: [{ positionId: lot.id, shares: lot.shares }]
+      commitments: [{ positionId: lot.id, shares: lot.shares }],
+      now: new Date("2026-07-06T13:00:00.000Z")
     });
 
     const leg = await prisma.parlayLeg.findFirst({

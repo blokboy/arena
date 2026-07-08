@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { currentUserFromHeaders } from "@/server/current-user";
-import { createFirstLeg } from "@/server/parlays";
+import { addFirstParlayLeg } from "@/server/parlays";
 
 export async function POST(
   request: Request,
@@ -31,13 +31,13 @@ export async function POST(
   };
 
   if (typeof marketId !== "string" || marketId.trim() === "") {
-    return NextResponse.json({ error: { code: "INVALID_MARKET_ID" } }, { status: 400 });
+    return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
   if (typeof outcomeIndex !== "number" || !Number.isInteger(outcomeIndex) || outcomeIndex < 0) {
-    return NextResponse.json({ error: { code: "INVALID_OUTCOME" } }, { status: 400 });
+    return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
-  if (!Array.isArray(commitments) || commitments.length === 0) {
-    return NextResponse.json({ error: { code: "NO_COMMITMENTS" } }, { status: 422 });
+  if (!Array.isArray(commitments)) {
+    return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
   for (const commit of commitments) {
     if (
@@ -47,57 +47,43 @@ export async function POST(
       typeof (commit as { shares?: unknown }).shares !== "string"
     ) {
       return NextResponse.json(
-        { error: { code: "INVALID_COMMITMENT" } },
+        { error: { code: "INVALID_BODY" } },
         { status: 400 }
       );
     }
   }
 
+  const errorStatusMap: Record<string, number> = {
+    NO_COMMITMENTS: 400,
+    COMMITMENT_POSITION_NOT_FOUND: 404,
+    COMMITMENT_MARKET_MISMATCH: 422,
+    COMMITMENT_EXCEEDS_AVAILABLE_SHARES: 422,
+    NOT_A_MEMBER: 403,
+    PARLAY_NOT_FOUND: 404,
+    PARLAY_NOT_DRAFT: 409
+  };
+
   try {
-    const result = await createFirstLeg({
-      user,
+    const result = await addFirstParlayLeg({
+      userId: user.id,
       parlayId,
       marketId: marketId.trim(),
       outcomeIndex,
-      commitments
+      commitments,
+      now: new Date()
     });
 
-    return NextResponse.json({ leg: result }, { status: 201 });
+    return NextResponse.json(
+      {
+        leg: { id: result.legId, status: result.legStatus },
+        parlay: { id: parlayId, status: result.parlayStatus }
+      },
+      { status: 201 }
+    );
   } catch (error) {
-    if (error instanceof Error) {
-      const known = new Set([
-        "INSUFFICIENT_BALANCE",
-        "MARKET_NOT_FOUND",
-        "MARKET_CLOSED",
-        "MARKET_INACTIVE",
-        "INVALID_OUTCOME",
-        "PRICE_UNAVAILABLE",
-        "POSITION_GROUP_NOT_FOUND",
-        "POSITION_NOT_FOUND",
-        "POSITION_NOT_OWNED",
-        "POSITION_NOT_OPEN",
-        "POSITION_WRONG_MARKET",
-        "POSITION_WRONG_OUTCOME",
-        "INSUFFICIENT_AVAILABLE_SHARES",
-        "NO_COMMITMENTS",
-        "PARLAY_NOT_FOUND",
-        "PARLAY_NOT_DRAFT",
-        "POSITION_CONFLICT"
-      ]);
-      const code = error.message;
-      if (known.has(code)) {
-        const status =
-          code === "NO_COMMITMENTS" ||
-          code === "INSUFFICIENT_AVAILABLE_SHARES" ||
-          code === "POSITION_WRONG_MARKET" ||
-          code === "POSITION_WRONG_OUTCOME" ||
-          code === "POSITION_NOT_OWNED" ||
-          code === "POSITION_NOT_OPEN" ||
-          code === "POSITION_NOT_FOUND"
-            ? 422
-            : 400;
-        return NextResponse.json({ error: { code } }, { status });
-      }
+    if (error instanceof Error && error.message in errorStatusMap) {
+      const status = errorStatusMap[error.message]!;
+      return NextResponse.json({ error: { code: error.message } }, { status });
     }
     throw error;
   }
