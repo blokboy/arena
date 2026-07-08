@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { SellAllDialog } from "@/components/positions/sell-all-dialog";
 import { SellFeedback, type SellFeedbackErrorCode } from "@/components/positions/sell-feedback";
 import { groupKey, PositionGroupRow } from "@/components/positions/position-group-row";
+import { StipendNotice } from "@/components/positions/stipend-notice";
 import { calculateSellValue, groupPositions } from "@/domain/positions";
 import { cn } from "@/lib/cn";
 import { formatPoints } from "@/lib/money";
@@ -73,10 +74,15 @@ function computeSellValue(group: PositionGroupView): string | undefined {
   return undefined;
 }
 
-export function PortfolioClient() {
+type PortfolioClientProps = {
+  stipendGrantedToday?: boolean;
+};
+
+export function PortfolioClient({ stipendGrantedToday }: PortfolioClientProps) {
   const router = useRouter();
   const [positions, setPositions] = useState<ListedPositionLot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stipendDismissed, setStipendDismissed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [sellAllDialog, setSellAllDialog] = useState<{
     group: PositionGroupView;
@@ -250,6 +256,11 @@ export function PortfolioClient() {
 
   return (
     <div className="space-y-8">
+      <StipendNotice
+        granted={Boolean(stipendGrantedToday) && !stipendDismissed}
+        onDismiss={() => setStipendDismissed(true)}
+      />
+
       <SellFeedback
         state={feedback.state}
         soldShares={feedback.soldShares}

@@ -248,6 +248,8 @@ Notes:
 
 ## Portfolio
 
+If the daily bankruptcy stipend has been granted, show a dismissible notice at the top of the Portfolio page, above `Open positions`. Copy: `Bankruptcy stipend received` / `The daily UTC stipend added +200 points because your balance was at or below 0.`
+
 ```text
 Portfolio
 

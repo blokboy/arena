@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/markets",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/stipend",
+      "schedule": "5 0 * * *"
+    },
+    {
+      "path": "/api/cron/settlement",
+      "schedule": "10 0 * * *"
     }
   ]
 }

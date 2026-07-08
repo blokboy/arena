@@ -157,9 +157,7 @@ export function normalizeGammaMarket(
     question: requiredString(market.question, "MARKET_QUESTION"),
     slug: requiredString(market.slug, "MARKET_SLUG"),
     outcomes: parseStringArray(market.outcomes, "INVALID_OUTCOMES"),
-    outcomePrices: parseStringArray(market.outcomePrices, "INVALID_OUTCOME_PRICES").map((price) =>
-      normalizePrice(price)
-    ),
+    outcomePrices: normalizeOutcomePrices(market.outcomes, market.outcomePrices),
     bestBid: normalizeNullablePrice(market.bestBid),
     bestAsk: normalizeNullablePrice(market.bestAsk),
     lastTradePrice: normalizeNullablePrice(market.lastTradePrice),
@@ -169,6 +167,17 @@ export function normalizeGammaMarket(
     volume: normalizeNonNegativeDecimal(market.volume ?? "0", "INVALID_VOLUME"),
     lastSyncedAt: options.lastSyncedAt
   };
+}
+
+function normalizeOutcomePrices(outcomesValue: unknown, pricesValue: unknown): string[] {
+  const outcomes = parseStringArray(outcomesValue, "INVALID_OUTCOMES");
+  if (pricesValue === null || pricesValue === undefined || pricesValue === "") {
+    return outcomes.map(() => "0");
+  }
+
+  return parseStringArray(pricesValue, "INVALID_OUTCOME_PRICES").map((price) =>
+    normalizePrice(price)
+  );
 }
 
 export function normalizePrice(value: unknown): string {

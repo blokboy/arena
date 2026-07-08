@@ -1,10 +1,12 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Ban, Check, X } from "lucide-react";
 import { describe, expect, test, vi } from "vitest";
 
 import { PositionGroupRow } from "@/components/positions/position-group-row";
 import { SellAllDialog } from "@/components/positions/sell-all-dialog";
+import { StipendNotice } from "@/components/positions/stipend-notice";
 import { calculateSellValue, getAvailableShares, groupPositions } from "@/domain/positions";
 import { formatPoints } from "@/lib/money";
 
@@ -229,6 +231,34 @@ describe("PositionGroupRow", () => {
 
     expect(screen.getByText(/Realized/)).toBeInTheDocument();
   });
+
+  test("renders settled status copy for won lost and voided groups", () => {
+    const settledGroups = [
+      { ...openGroup, status: "WON" as const },
+      { ...openGroup, status: "LOST" as const },
+      { ...openGroup, status: "VOIDED" as const }
+    ];
+
+    render(
+      <div>
+        {settledGroups.map((group) => (
+          <PositionGroupRow
+            key={group.status}
+            group={group}
+            expanded={false}
+            onToggleExpanded={() => {}}
+            canSellAll={false}
+            canSellLots={false}
+            showRealizedResult={true}
+          />
+        ))}
+      </div>
+    );
+
+    expect(screen.getByText("Won")).toBeInTheDocument();
+    expect(screen.getByText("Lost")).toBeInTheDocument();
+    expect(screen.getByText("Voided, refunded")).toBeInTheDocument();
+  });
 });
 
 describe("SellAllDialog", () => {
@@ -368,6 +398,135 @@ describe("SellAllDialog", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAttribute("aria-label", "Sell all available shares?");
+  });
+});
+
+describe("settled-row status treatment", () => {
+  const baseLot = {
+    id: "lot-1",
+    marketId: "market-1",
+    marketQuestion: "Will it rain?",
+    outcomeIndex: 0,
+    outcomeLabel: "Yes",
+    stake: "100",
+    shares: "200",
+    committedShares: "0",
+    entryPrice: "0.5",
+    purchasedAt: "2026-07-06T10:00:00.000Z"
+  };
+
+  function settledGroup(status: "WON" | "LOST" | "VOIDED", realizedPoints?: string) {
+    return {
+      marketId: "market-1",
+      marketQuestion: "Will it rain?",
+      outcomeIndex: 0,
+      outcomeLabel: "Yes",
+      status,
+      lots: [{ ...baseLot, status }],
+      totalStake: "100",
+      totalShares: "200",
+      committedShares: "0",
+      availableShares: "0",
+      averageEntryPrice: "0.5",
+      realizedPoints
+    };
+  }
+
+  test("won status shows green badge with Check icon and no mark-to-market language", () => {
+    render(
+      <PositionGroupRow
+        group={settledGroup("WON", "100")}
+        expanded={false}
+        onToggleExpanded={() => {}}
+        canSellAll={false}
+        canSellLots={false}
+        showRealizedResult={true}
+      />
+    );
+
+    expect(screen.getByText("Won")).toBeInTheDocument();
+    expect(screen.queryByText("P&L")).not.toBeInTheDocument();
+    expect(screen.queryByText("current value if sold now")).not.toBeInTheDocument();
+    expect(screen.queryByText("unrealized")).not.toBeInTheDocument();
+    expect(screen.getByText(/Realized/)).toBeInTheDocument();
+  });
+
+  test("lost status shows red badge with X icon", () => {
+    render(
+      <PositionGroupRow
+        group={settledGroup("LOST", "-100")}
+        expanded={false}
+        onToggleExpanded={() => {}}
+        canSellAll={false}
+        canSellLots={false}
+        showRealizedResult={true}
+      />
+    );
+
+    expect(screen.getByText("Lost")).toBeInTheDocument();
+    expect(screen.queryByText("P&L")).not.toBeInTheDocument();
+    expect(screen.queryByText("current value if sold now")).not.toBeInTheDocument();
+  });
+
+  test("voided status shows 'Voided, refunded' with Ban icon in neutral gray", () => {
+    render(
+      <PositionGroupRow
+        group={settledGroup("VOIDED", "0")}
+        expanded={false}
+        onToggleExpanded={() => {}}
+        canSellAll={false}
+        canSellLots={false}
+        showRealizedResult={true}
+      />
+    );
+
+    expect(screen.getByText("Voided, refunded")).toBeInTheDocument();
+    expect(screen.queryByText("Voided")).not.toBeInTheDocument();
+    expect(screen.queryByText("P&L")).not.toBeInTheDocument();
+    expect(screen.queryByText("current value if sold now")).not.toBeInTheDocument();
+  });
+
+  test("won status in expanded lot row shows Check icon", () => {
+    render(
+      <PositionGroupRow
+        group={settledGroup("WON", "100")}
+        expanded={true}
+        onToggleExpanded={() => {}}
+        canSellAll={false}
+        canSellLots={false}
+        showRealizedResult={true}
+      />
+    );
+
+    expect(screen.getAllByText("Won")).toHaveLength(2);
+  });
+});
+
+describe("StipendNotice", () => {
+  test("renders the bankruptcy stipend banner when granted", () => {
+    render(<StipendNotice granted={true} onDismiss={() => {}} />);
+
+    expect(screen.getByText("Bankruptcy stipend received")).toBeInTheDocument();
+    expect(
+      screen.getByText(/The daily UTC stipend added \+200 points because your balance was at or below 0\./)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss bankruptcy stipend notice" })).toBeInTheDocument();
+  });
+
+  test("does not render when not granted", () => {
+    render(<StipendNotice granted={false} onDismiss={() => {}} />);
+
+    expect(screen.queryByText("Bankruptcy stipend received")).not.toBeInTheDocument();
+  });
+
+  test("calls onDismiss when dismiss button is clicked", async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+
+    render(<StipendNotice granted={true} onDismiss={onDismiss} />);
+
+    await user.click(screen.getByRole("button", { name: "Dismiss bankruptcy stipend notice" }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
 

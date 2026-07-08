@@ -299,7 +299,7 @@ Rationale for the fifth state: PRD explicitly distinguishes rollover-salvage fro
 
 Only one leg in a chain can be Active at a time — enforce this visually by making "Live" the only state with motion/animation, so a user glancing at a long chain can find the live leg without reading every label.
 
-> A sixth state, **Voided**, was added by Backend after this plan was written, to cover markets that void/cancel rather than resolve (Part III §6.1). See Part IV §3 for the resolved badge treatment ("Voided — refunded," neutral gray, `Ban`/`CircleSlash` icon) — it follows the same non-color-signal rule as the five states above.
+> A sixth state, **Voided**, was added by Backend after this plan was written, to cover markets that void/cancel rather than resolve (Part III §6.1). See Part IV §3 for the resolved badge treatment ("Voided, refunded," neutral gray, `Ban`/`CircleSlash` icon) — it follows the same non-color-signal rule as the five states above.
 
 #### 2.3 The member vote (rollover authority)
 
@@ -395,7 +395,7 @@ The original version of this plan flagged four open questions. All are now resol
 
 - **shadcn style variant + dark mode scope** → resolved in Part IV §0/§3: `default` style; dark mode in scope for v1.
 - **Insert-animation and live-pulse motion implementation** → resolved in Part IV §0/§4.4: Framer Motion (`layout` + `AnimatePresence` for the timeline reorder; a gated `motion.div` keyframe loop for the pulse), with a `prefers-reduced-motion` fallback for both.
-- **Voided/cancelled-market UI state** → resolved: Backend's fallback (Part III §6.1: flat refund, `VOIDED` terminal status) is represented as a sixth badge state in Part IV §3 ("Voided — refunded," neutral gray, `Ban`/`CircleSlash` icon — same non-color-signal treatment as the original five states).
+- **Voided/cancelled-market UI state** → resolved: Backend's fallback (Part III §6.1: flat refund, `VOIDED` terminal status) is represented as a sixth badge state in Part IV §3 ("Voided, refunded," neutral gray, `Ban`/`CircleSlash` icon — same non-color-signal treatment as the original five states).
 - **Tie-breaking visibility** → confirmed no design impact, as expected; the deterministic key is `endDate ASC, gammaId ASC` (Part III §6.2).
 
 ---
@@ -627,7 +627,7 @@ All three jobs share a common internal engine (`lib/parlay/engine.ts`: `executeJ
 
 #### 6.1 Voided/cancelled markets
 
-> **Pre-implementation verification required** (surfaced during grilling, not yet resolved by discussion): PRD §1's "outcomePrices collapses to 1/0 on resolution" was verified against a real *binary* resolved market. The voided-market detection rule below depends on this collapse behavior holding for **multi-outcome markets** too (e.g. a 5-candidate election in one market's `outcomes[]`/`outcomePrices[]`), which has not yet been separately confirmed. Before this settlement job is built: check a real resolved multi-outcome Polymarket market's `outcomePrices` shape. If it doesn't collapse to exactly one `1` and the rest `0` across all N outcomes the way a binary market does, the detection rule below will misfire — treating a legitimately-resolved multi-outcome market as voided, incorrectly refunding real winners instead of paying them out.
+> **Verification complete:** live Gamma/API review confirmed that a single Gamma market row is always binary (`Yes`/`No`), and that "multi-outcome" events are represented as many linked binary rows (`negRisk`) rather than one N-outcome market row. It also confirmed that resolved rows collapse `outcomePrices` to `1`/`0`, and that no explicit void/cancel flag exists to prefer over that price signal. See **ADR-0004** (`docs/adr/0004-gamma-resolution-behavior-verified.md`). The price-collapse rule below therefore remains the correct settlement detector for every reachable Gamma market shape in this product.
 
 **Detection:** a market is treated as **voided**, not resolved, when Gamma reports `closed = true` but `outcomePrices` do **not** cleanly collapse to `{0, 1}` per outcome (the documented resolution signal per PRD §1). This is a heuristic given the Gamma API surface described in the PRD; if a more explicit void/cancellation flag is confirmed to exist on the live API during implementation, prefer it and treat the price-collapse check as a fallback.
 
@@ -810,7 +810,7 @@ Confirms Designer's token table (Part II §3) as source of truth; this section o
   - `--live` → `blue-500` (light) / `blue-400` (dark)
   - `--pending` → `slate-400` / `--muted-foreground`
   - `--info` (rolled-over) → `violet-500` (light) / `violet-400` (dark)
-- Each `LegStatusBadge` variant pairs color with: `pending` = dashed outline + lucide `Lock` plus `Clock` (label "Pending, locked"), `live` = solid + pulsing dot + lucide `Radio`/`Activity`, `won` = solid + `Check`, `lost` = solid + `X`, `rolled-over` = solid + `CornerUpRight` (curve/arrow, distinct from check/x), `voided` (Backend's 6th state) = outline + `Ban`/`CircleSlash` icon, neutral gray, labeled "Voided — refunded." This voided variant is the resolution to Designer's punted 6th-state question (Part II, Resolution status section).
+- Each `LegStatusBadge` variant pairs color with: `pending` = dashed outline + lucide `Lock` plus `Clock` (label "Pending, locked"), `live` = solid + pulsing dot + lucide `Radio`/`Activity`, `won` = solid + `Check`, `lost` = solid + `X`, `rolled-over` = solid + `CornerUpRight` (curve/arrow, distinct from check/x), `voided` (Backend's 6th state) = outline + `Ban`/`CircleSlash` icon, neutral gray, labeled "Voided, refunded." This voided variant is the resolution to Designer's punted 6th-state question (Part II, Resolution status section).
 - Badge contrast checked against both themes at implementation time per accessibility flag #8 — flagging as a required manual QA step before this ships, not something resolved by token choice alone.
 
 ---

@@ -2,6 +2,8 @@ import type { GammaMarket } from "./markets";
 import { parseStringArray } from "./markets";
 import { divideDecimalStrings, getAvailableShares, multiplyDecimalStrings } from "./positions";
 
+type MarketResolutionInput = Pick<GammaMarket, "closed" | "outcomes" | "outcomePrices">;
+
 export type MarketResolution =
   | {
       status: "RESOLVED";
@@ -29,7 +31,7 @@ export type PositionSettlement = {
   payout: string;
 };
 
-export function detectMarketResolution(market: GammaMarket): MarketResolution {
+export function detectMarketResolution(market: MarketResolutionInput): MarketResolution {
   if (market.closed !== true) {
     return { status: "OPEN" };
   }

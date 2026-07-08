@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Ban, Check, X } from "lucide-react";
 
 import { LockedShareValue } from "@/components/positions/locked-share-value";
 import { getAvailableShares } from "@/domain/positions";
@@ -75,13 +76,27 @@ export function PositionLotRow({ lot, showSellAction, onSell, sellLabel, sellDis
           <>
             <span className="mx-1">·</span>
             <span className={cn(
-              "font-medium",
+              "inline-flex items-center gap-0.5 font-medium",
               lot.status === "WON" && "text-emerald-600",
               lot.status === "LOST" && "text-red-600",
               lot.status === "VOIDED" && "text-slate-500",
               lot.status === "SOLD" && "text-slate-500"
             )}>
-              {lot.status}
+              {lot.status === "WON" ? (
+                <>
+                  <Check className="h-3 w-3" aria-hidden="true" /> Won
+                </>
+              ) : lot.status === "LOST" ? (
+                <>
+                  <X className="h-3 w-3" aria-hidden="true" /> Lost
+                </>
+              ) : lot.status === "VOIDED" ? (
+                <>
+                  <Ban className="h-3 w-3" aria-hidden="true" /> Voided, refunded
+                </>
+              ) : (
+                "Sold"
+              )}
             </span>
           </>
         ) : null}

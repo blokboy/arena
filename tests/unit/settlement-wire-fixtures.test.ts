@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GammaMarket } from "../../src/domain/markets";
-import { detectMarketResolution } from "../../src/domain/settlement";
+import { calculatePositionSettlement, detectMarketResolution } from "../../src/domain/settlement";
 import marketOpen from "../../test/fixtures/gamma/market-open-binary.json";
 import marketResolvedMulti from "../../test/fixtures/gamma/market-resolved-multi-outcome.json";
 import marketResolved from "../../test/fixtures/gamma/market-resolved-binary.json";
@@ -32,12 +32,10 @@ describe("resolution vs void detection on raw fixtures", () => {
     expect(detectMarketResolution(marketVoided as GammaMarket)).toEqual({ status: "VOIDED" });
   });
 
-  it("multi-outcome collapse — PROVISIONAL fixture, see PRD Part III §6.1", () => {
-    // The PRD flags this as a pre-implementation verification task: the
-    // fixture assumes multi-outcome markets collapse like binary ones. If a
-    // real recorded response contradicts this, the detection rule (and this
-    // fixture) must change BEFORE the settlement job is built — otherwise
-    // legitimately-resolved multi-outcome markets would be refunded as voided.
+  it("generic N-outcome 1/0 collapse still resolves deterministically", () => {
+    // ADR-0004 verified that live Gamma market rows are always binary, so
+    // this fixture is parser-hardening rather than a reachable production
+    // wire shape. The detector still handles it generically.
     expect(detectMarketResolution(marketResolvedMulti as GammaMarket)).toEqual({
       status: "RESOLVED",
       winningOutcomeIndex: 1,
@@ -46,14 +44,36 @@ describe("resolution vs void detection on raw fixtures", () => {
   });
 });
 
-describe("voided-market fallback rules (need repository + settlement job)", () => {
-  it.todo("single-market Position: refunds original stake exactly, marks VOIDED");
-  it.todo('refund is flat principal — never "last known price"');
-  it.todo(
-    "non-final parlay leg: neutral pass-through, forward-buys next leg with untouched amount"
-  );
-  it.todo("final parlay leg: refunds each stake to balance, Parlay.status = VOIDED");
-  it.todo(
-    "prefers an explicit Gamma void/cancel flag over the price heuristic if one exists (verify live API)"
-  );
+describe("voided-market fallback rules on raw fixtures", () => {
+  it("single-market Position: refunds original stake exactly, marks VOIDED", () => {
+    expect(
+      calculatePositionSettlement({
+        outcomeIndex: 0,
+        stake: "100",
+        shares: "200",
+        committedShares: "0",
+        resolution: detectMarketResolution(marketVoided as GammaMarket)
+      })
+    ).toEqual({
+      status: "VOIDED",
+      settledShares: "200",
+      payout: "100"
+    });
+  });
+
+  it('refund is flat principal — never "last known price"', () => {
+    expect(
+      calculatePositionSettlement({
+        outcomeIndex: 0,
+        stake: "90",
+        shares: "180",
+        committedShares: "30",
+        resolution: detectMarketResolution(marketVoided as GammaMarket)
+      })
+    ).toEqual({
+      status: "VOIDED",
+      settledShares: "150",
+      payout: "75"
+    });
+  });
 });
