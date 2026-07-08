@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Ban, Check, X } from "lucide-react";
 
 import { LockedShareValue } from "@/components/positions/locked-share-value";
 import { PositionLotRow } from "@/components/positions/position-lot-row";
@@ -89,14 +90,28 @@ export function PositionGroupRow({
             {group.status !== "OPEN" ? (
               <span
                 className={cn(
-                  "rounded-sm px-2 py-0.5 text-xs font-medium",
+                  "inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs font-medium",
                   group.status === "WON" && "bg-emerald-100 text-emerald-800",
                   group.status === "LOST" && "bg-red-100 text-red-800",
                   group.status === "VOIDED" && "bg-slate-100 text-slate-600",
                   group.status === "SOLD" && "bg-slate-100 text-slate-600"
                 )}
               >
-                {group.status === "WON" ? "Won" : group.status === "LOST" ? "Lost" : group.status === "VOIDED" ? "Voided" : "Sold"}
+                {group.status === "WON" ? (
+                  <>
+                    <Check className="h-3 w-3" aria-hidden="true" /> Won
+                  </>
+                ) : group.status === "LOST" ? (
+                  <>
+                    <X className="h-3 w-3" aria-hidden="true" /> Lost
+                  </>
+                ) : group.status === "VOIDED" ? (
+                  <>
+                    <Ban className="h-3 w-3" aria-hidden="true" /> Voided, refunded
+                  </>
+                ) : (
+                  "Sold"
+                )}
               </span>
             ) : null}
           </div>

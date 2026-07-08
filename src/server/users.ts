@@ -1,4 +1,5 @@
 import { STARTING_BALANCE } from "@/lib/money";
+import { getUtcGrantDay } from "@/domain/settlement";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
 
 export type StoredUser = {
@@ -7,6 +8,7 @@ export type StoredUser = {
   passwordHash: string;
   balance: number;
   hasSeenStartingBalanceBanner: boolean;
+  stipendGrantedToday: boolean;
 };
 
 export type UserRepository = {
@@ -39,13 +41,14 @@ export function createMemoryUserRepository(
 
   return {
     async createUser(input) {
-      const user = {
-        id: `user_${state.nextId++}`,
-        username: input.username,
-        passwordHash: input.passwordHash,
-        balance: STARTING_BALANCE,
-        hasSeenStartingBalanceBanner: false
-      };
+        const user = {
+          id: `user_${state.nextId++}`,
+          username: input.username,
+          passwordHash: input.passwordHash,
+          balance: STARTING_BALANCE,
+          hasSeenStartingBalanceBanner: false,
+          stipendGrantedToday: false
+        };
       users.set(user.username, user);
       ids.set(user.id, user);
       return user;
@@ -91,13 +94,16 @@ function toStoredUser(row: {
   passwordHash: string;
   balance: { toNumber(): number };
   signupBannerAt: Date | null;
+  stipendGrantedToday?: boolean;
+  stipendGrants?: Array<{ id: string }>;
 }): StoredUser {
   return {
     id: row.id,
     username: row.username,
     passwordHash: row.passwordHash,
     balance: row.balance.toNumber(),
-    hasSeenStartingBalanceBanner: row.signupBannerAt !== null
+    hasSeenStartingBalanceBanner: row.signupBannerAt !== null,
+    stipendGrantedToday: row.stipendGrantedToday ?? ((row.stipendGrants?.length ?? 0) > 0)
   };
 }
 
@@ -110,11 +116,27 @@ export function createPrismaUserRepository(): UserRepository {
       return toStoredUser(row);
     },
     async findByUsername(username) {
-      const row = await prisma.user.findUnique({ where: { username } });
+      const row = await prisma.user.findUnique({
+        where: { username },
+        include: {
+          stipendGrants: {
+            where: { dayKey: getUtcGrantDay(new Date()) },
+            select: { id: true }
+          }
+        }
+      });
       return row ? toStoredUser(row) : undefined;
     },
     async findById(id) {
-      const row = await prisma.user.findUnique({ where: { id } });
+      const row = await prisma.user.findUnique({
+        where: { id },
+        include: {
+          stipendGrants: {
+            where: { dayKey: getUtcGrantDay(new Date()) },
+            select: { id: true }
+          }
+        }
+      });
       return row ? toStoredUser(row) : undefined;
     },
     async markStartingBalanceBannerSeen(id) {
@@ -137,6 +159,7 @@ export function createPrismaUserRepository(): UserRepository {
       }
     },
     async clear() {
+      await prisma.bankruptcyStipendGrant.deleteMany();
       await prisma.user.deleteMany();
     }
   };
