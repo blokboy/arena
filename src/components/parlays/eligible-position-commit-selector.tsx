@@ -30,9 +30,7 @@ type LegacyProps = {
 
 type EligiblePositionCommitSelectorProps = ControlledProps | LegacyProps;
 
-export function EligiblePositionCommitSelector({
-  ...props
-}: EligiblePositionCommitSelectorProps) {
+export function EligiblePositionCommitSelector({ ...props }: EligiblePositionCommitSelectorProps) {
   const isLegacyMode = "positions" in props;
   const [legacyCommitments, setLegacyCommitments] = useState<SelectedCommitments>({});
 
@@ -95,8 +93,8 @@ export function EligiblePositionCommitSelector({
       </div>
 
       <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        These shares become unavailable after commit. Committed shares are locked immediately and are
-        lost to HOUSE if an earlier leg fails first.
+        These shares become unavailable after commit. Committed shares are locked immediately and
+        are lost to HOUSE if an earlier leg fails first.
       </div>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
@@ -125,7 +123,9 @@ export function EligiblePositionCommitSelector({
                   )}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-950">{lot.marketQuestion}</p>
+                    <p className="truncate text-sm font-medium text-slate-950">
+                      {lot.marketQuestion}
+                    </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {lot.outcomeLabel}
                       {lot.purchasedAt ? ` · bought ${formatPurchasedAt(lot.purchasedAt)}` : ""}
@@ -144,7 +144,9 @@ export function EligiblePositionCommitSelector({
 
                   <div className="flex items-center gap-2 text-sm text-slate-600">
                     <Lock className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                    <span>{isSelected ? `${selectedNumeric} selected` : "Will lock on commit"}</span>
+                    <span>
+                      {isSelected ? `${selectedNumeric} selected` : "Will lock on commit"}
+                    </span>
                   </div>
 
                   <label className="flex items-center justify-between gap-3 md:justify-end">
@@ -179,9 +181,7 @@ export function EligiblePositionCommitSelector({
                     />
                   </label>
                   {lotError ? (
-                    <p className="text-sm text-red-700 md:col-start-5 md:text-right">
-                      {lotError}
-                    </p>
+                    <p className="text-sm text-red-700 md:col-start-5 md:text-right">{lotError}</p>
                   ) : null}
                 </div>
               );
@@ -195,9 +195,12 @@ export function EligiblePositionCommitSelector({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
         <p className="text-sm text-slate-600">
           Selected commitments: <span className="font-medium text-slate-950">{selectedShares}</span>{" "}
-          shares across <span className="font-medium text-slate-950">{selectedLots.length}</span> lots
+          shares across <span className="font-medium text-slate-950">{selectedLots.length}</span>{" "}
+          lots
         </p>
-        <p className="text-xs text-slate-500">These selections become part of the locked parlay stake.</p>
+        <p className="text-xs text-slate-500">
+          These selections become part of the locked parlay stake.
+        </p>
       </div>
 
       {errorMessage ? (

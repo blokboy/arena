@@ -82,7 +82,10 @@ describe("atomic first-leg creation", () => {
       })
     ).rejects.toThrow("NO_COMMITMENTS");
 
-    const draftInDb = await prisma.parlay.findUnique({ where: { id: draft.id }, include: { legs: true } });
+    const draftInDb = await prisma.parlay.findUnique({
+      where: { id: draft.id },
+      include: { legs: true }
+    });
     expect(draftInDb).not.toBeNull();
     expect(draftInDb!.legs).toHaveLength(0);
     expect(draftInDb!.status).toBe("DRAFT");
@@ -111,7 +114,10 @@ describe("atomic first-leg creation", () => {
       })
     ).rejects.toThrow("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
 
-    const draftInDb = await prisma.parlay.findUnique({ where: { id: draft.id }, include: { legs: true } });
+    const draftInDb = await prisma.parlay.findUnique({
+      where: { id: draft.id },
+      include: { legs: true }
+    });
     expect(draftInDb).not.toBeNull();
     expect(draftInDb!.legs).toHaveLength(0);
     expect(draftInDb!.status).toBe("DRAFT");

@@ -62,7 +62,11 @@ describe("ParlayRosterStep", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /add alex/i }));
-    expect(onAddMember).toHaveBeenCalledWith({ id: "user-2", username: "alex", subtitle: "active" });
+    expect(onAddMember).toHaveBeenCalledWith({
+      id: "user-2",
+      username: "alex",
+      subtitle: "active"
+    });
     expect(screen.getByLabelText("Parlay name")).toHaveValue("Monday crew");
     expect(screen.getByPlaceholderText("Search by username")).toHaveValue("al");
   });
@@ -101,18 +105,13 @@ describe("EligiblePositionCommitSelector", () => {
     expect(screen.getByText("Will BTC close above 150k?")).toBeInTheDocument();
     expect(screen.getByText("0.56")).toBeInTheDocument();
     expect(screen.getByText("120")).toBeInTheDocument();
-    expect(screen.getByLabelText(/shares to commit for will btc close above 150k\? yes/i)).toHaveValue(
-      null
-    );
+    expect(
+      screen.getByLabelText(/shares to commit for will btc close above 150k\? yes/i)
+    ).toHaveValue(null);
   });
 
   test("highlights selected lots as locked after commit", () => {
-    render(
-      <EligiblePositionCommitSelector
-        lots={lots}
-        selectedCommitments={{ "pos-1": "25" }}
-      />
-    );
+    render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{ "pos-1": "25" }} />);
 
     expect(screen.getByText("25 selected")).toBeInTheDocument();
   });

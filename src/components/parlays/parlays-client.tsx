@@ -84,7 +84,10 @@ export function ParlaysClient() {
       {status === "success" && parlays.length > 0 ? (
         <ul className="grid gap-4 lg:grid-cols-2" role="list">
           {parlays.map((parlay) => (
-            <li className="rounded-md border border-slate-200 bg-white p-4 shadow-sm" key={parlay.id}>
+            <li
+              className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+              key={parlay.id}
+            >
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="font-medium text-slate-950">{parlay.name}</h2>
@@ -103,7 +106,9 @@ export function ParlaysClient() {
 
               {parlay.currentActiveLeg ? (
                 <div className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
-                  <p className="font-medium text-slate-950">{parlay.currentActiveLeg.marketQuestion}</p>
+                  <p className="font-medium text-slate-950">
+                    {parlay.currentActiveLeg.marketQuestion}
+                  </p>
                   <p className="mt-1">
                     {parlay.currentActiveLeg.status.toLowerCase()} · resolves{" "}
                     {formatDate(parlay.currentActiveLeg.endDate)}

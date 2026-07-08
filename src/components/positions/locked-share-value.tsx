@@ -10,7 +10,11 @@ type LockedShareValueProps = {
   className?: string;
 };
 
-export function LockedShareValue({ lockedShares, availableShares, className }: LockedShareValueProps) {
+export function LockedShareValue({
+  lockedShares,
+  availableShares,
+  className
+}: LockedShareValueProps) {
   if (lockedShares === "0") {
     return null;
   }

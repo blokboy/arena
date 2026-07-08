@@ -151,7 +151,9 @@ export function ParlayRosterStep({
                   >
                     <div>
                       <p className="text-sm font-medium text-slate-950">{user.username}</p>
-                      {user.subtitle ? <p className="mt-0.5 text-xs text-slate-500">{user.subtitle}</p> : null}
+                      {user.subtitle ? (
+                        <p className="mt-0.5 text-xs text-slate-500">{user.subtitle}</p>
+                      ) : null}
                     </div>
                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                       {alreadySelected ? "Added" : "Add"}

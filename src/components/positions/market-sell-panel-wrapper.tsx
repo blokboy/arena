@@ -145,9 +145,7 @@ export function MarketSellPanelWrapper({
 
   const handleSellAll = useCallback(
     async (groupId: string) => {
-      const group = groups.find(
-        (g) => `${g.marketId}:${g.outcomeIndex}:${g.status}` === groupId
-      );
+      const group = groups.find((g) => `${g.marketId}:${g.outcomeIndex}:${g.status}` === groupId);
       if (!group) throw new Error("GROUP_NOT_FOUND");
 
       const response = await fetch("/api/positions/sell-all", {

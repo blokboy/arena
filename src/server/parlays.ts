@@ -1,8 +1,4 @@
-import {
-  type Commitment,
-  computeCommittedPrincipal,
-  sumCommitDecimals
-} from "@/domain/parlays";
+import { type Commitment, computeCommittedPrincipal, sumCommitDecimals } from "@/domain/parlays";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
 import { marketCacheRepository, type MarketCacheRepository } from "@/server/markets";
 import { positionRepository, type PositionRepository } from "@/server/positions";

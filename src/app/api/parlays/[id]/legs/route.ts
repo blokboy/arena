@@ -3,10 +3,7 @@ import { NextResponse } from "next/server";
 import { currentUserFromHeaders } from "@/server/current-user";
 import { addFirstParlayLeg } from "@/server/parlays";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await currentUserFromHeaders(request.headers);
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
@@ -46,10 +43,7 @@ export async function POST(
       typeof (commit as { positionId?: unknown }).positionId !== "string" ||
       typeof (commit as { shares?: unknown }).shares !== "string"
     ) {
-      return NextResponse.json(
-        { error: { code: "INVALID_BODY" } },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
     }
   }
 

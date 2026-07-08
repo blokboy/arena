@@ -76,7 +76,8 @@ export function PositionGroupRow({
 }: PositionGroupRowProps) {
   const key = groupKey(group);
   const detailsId = `group-${key}-details`;
-  const showSellValue = group.currentSellValue && group.availableShares !== "0" && !showRealizedResult;
+  const showSellValue =
+    group.currentSellValue && group.availableShares !== "0" && !showRealizedResult;
 
   return (
     <div className="rounded-md border border-slate-200 bg-white">
@@ -158,7 +159,9 @@ export function PositionGroupRow({
             onClick={() => onToggleExpanded(key)}
             className="min-h-9 rounded-md border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:border-slate-400"
           >
-            {expanded ? "Hide lots" : `${group.lots.length} lot${group.lots.length !== 1 ? "s" : ""}`}
+            {expanded
+              ? "Hide lots"
+              : `${group.lots.length} lot${group.lots.length !== 1 ? "s" : ""}`}
           </button>
 
           {canSellAll && onSellAll ? (

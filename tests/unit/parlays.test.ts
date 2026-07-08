@@ -306,7 +306,16 @@ describe("committed principal computation", () => {
   it("computes proportional principal from stake and shares", () => {
     const result = computeCommittedPrincipal({
       commitment: { positionId: "pos-1", shares: "50" },
-      position: { id: "pos-1", userId: "alice", marketId: "m1", outcomeIndex: 0, shares: "100", committedShares: "0", stake: "200", status: "OPEN" }
+      position: {
+        id: "pos-1",
+        userId: "alice",
+        marketId: "m1",
+        outcomeIndex: 0,
+        shares: "100",
+        committedShares: "0",
+        stake: "200",
+        status: "OPEN"
+      }
     });
     expect(result).toBe("100");
   });
@@ -314,7 +323,16 @@ describe("committed principal computation", () => {
   it("computes correctly for fractional shares", () => {
     const result = computeCommittedPrincipal({
       commitment: { positionId: "pos-1", shares: "390.625" },
-      position: { id: "pos-1", userId: "alice", marketId: "m1", outcomeIndex: 0, shares: "390.625", committedShares: "0", stake: "250", status: "OPEN" }
+      position: {
+        id: "pos-1",
+        userId: "alice",
+        marketId: "m1",
+        outcomeIndex: 0,
+        shares: "390.625",
+        committedShares: "0",
+        stake: "250",
+        status: "OPEN"
+      }
     });
     expect(result).toBe("250");
   });

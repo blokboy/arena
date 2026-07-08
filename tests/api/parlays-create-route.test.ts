@@ -57,22 +57,17 @@ describe("POST /api/parlays", () => {
     await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_BODY" } });
   });
 
-  test.each(["", "   ", undefined, 42])(
-    "rejects a missing or blank name (%j)",
-    async (name) => {
-      const alice = await userRepository.createUser({ username: "alice", passwordHash: "hashed" });
+  test.each(["", "   ", undefined, 42])("rejects a missing or blank name (%j)", async (name) => {
+    const alice = await userRepository.createUser({ username: "alice", passwordHash: "hashed" });
 
-      const response = await createParlay(
-        createRequest({ name, inviteUserIds: [] }, alice.id)
-      );
+    const response = await createParlay(createRequest({ name, inviteUserIds: [] }, alice.id));
 
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toEqual({
-        error: { code: "PARLAY_NAME_REQUIRED" }
-      });
-      expect(await prisma.parlay.count()).toBe(0);
-    }
-  );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "PARLAY_NAME_REQUIRED" }
+    });
+    expect(await prisma.parlay.count()).toBe(0);
+  });
 
   test("rejects an invitee id that isn't a real user, persisting nothing", async () => {
     const alice = await userRepository.createUser({ username: "alice", passwordHash: "hashed" });

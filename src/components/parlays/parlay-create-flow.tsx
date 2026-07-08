@@ -14,7 +14,13 @@ import type {
   SelectedCommitments
 } from "@/components/parlays/types";
 import { WizardStepIndicator } from "@/components/parlays/wizard-step-indicator";
-import { CATEGORY_TAGS, MARKET_CATEGORIES, type CachedEvent, type CachedMarket, type MarketCategory } from "@/domain/markets";
+import {
+  CATEGORY_TAGS,
+  MARKET_CATEGORIES,
+  type CachedEvent,
+  type CachedMarket,
+  type MarketCategory
+} from "@/domain/markets";
 import { cn } from "@/lib/cn";
 
 type ParlayCreateFlowProps = {
@@ -298,9 +304,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
       }
 
       if (Number(shares) > Number(lot.availableShares)) {
-        setFirstLegError(
-          `Lot ${lot.positionId} only has ${lot.availableShares} available shares.`
-        );
+        setFirstLegError(`Lot ${lot.positionId} only has ${lot.availableShares} available shares.`);
         return false;
       }
     }
@@ -331,9 +335,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
         });
 
         const createParlayBody = (await createParlayResponse.json().catch(() => undefined)) as
-          | { parlay?: { id?: string } }
-          | { error?: { code?: string } }
-          | undefined;
+          { parlay?: { id?: string } } | { error?: { code?: string } } | undefined;
 
         const createdParlayId = getCreatedParlayId(createParlayBody);
 
@@ -367,8 +369,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
       });
 
       const createLegBody = (await createLegResponse.json().catch(() => undefined)) as
-        | { error?: { code?: string } }
-        | undefined;
+        { error?: { code?: string } } | undefined;
 
       if (!createLegResponse.ok) {
         setFirstLegError(getLegErrorMessage(createLegBody?.error?.code));
@@ -400,7 +401,8 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-medium">Saved draft found: {savedDraft.name}</p>
           <p className="mt-1">
-            Leg 1 was not finished yet. You can resume this hidden draft and keep it out of active discovery until the first leg succeeds.
+            Leg 1 was not finished yet. You can resume this hidden draft and keep it out of active
+            discovery until the first leg succeeds.
           </p>
           <div className="mt-3 flex flex-wrap gap-3">
             <button
@@ -431,7 +433,8 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
       {step === "roster" ? (
         <div className="space-y-4">
           <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            You will be added automatically as the creator. Search results show usernames, but the roster is submitted using stable user IDs.
+            You will be added automatically as the creator. Search results show usernames, but the
+            roster is submitted using stable user IDs.
           </div>
 
           <ParlayRosterStep
@@ -453,9 +456,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
             }
             onSearchQueryChange={setSearchQuery}
             rosterError={
-              searchStatus === "error"
-                ? "Users could not be loaded right now."
-                : rosterError
+              searchStatus === "error" ? "Users could not be loaded right now." : rosterError
             }
             searchQuery={searchQuery}
             searchResults={searchResults}
@@ -552,7 +553,8 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
                     <div className="divide-y divide-slate-100">
                       {event.markets.map((market) => {
                         const selected = selectedMarket?.gammaId === market.gammaId;
-                        const unavailable = market.closed || !market.active || market.bestAsk === null;
+                        const unavailable =
+                          market.closed || !market.active || market.bestAsk === null;
 
                         return (
                           <div
@@ -573,14 +575,17 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
                               </div>
                               <p className="mt-2 text-sm text-slate-600">
                                 {market.outcomes.map((outcome, index) => (
-                                  <span key={`${market.gammaId}-${outcome}`} className="mr-3 inline-block">
+                                  <span
+                                    key={`${market.gammaId}-${outcome}`}
+                                    className="mr-3 inline-block"
+                                  >
                                     {outcome} {formatPercent(market.outcomePrices[index])}
                                   </span>
                                 ))}
                               </p>
                               <p className="mt-2 text-xs text-slate-500">
-                                Buy at {market.bestAsk ?? "n/a"} · Sell at {market.bestBid ?? "n/a"} · Resolves{" "}
-                                {formatDate(market.endDate)}
+                                Buy at {market.bestAsk ?? "n/a"} · Sell at {market.bestBid ?? "n/a"}{" "}
+                                · Resolves {formatDate(market.endDate)}
                               </p>
                             </div>
                             <button
@@ -616,7 +621,9 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
             {selectedMarket ? (
               <div
                 aria-label="Outcome"
-                className={selectedMarket.outcomes.length === 2 ? "grid grid-cols-2 gap-2" : "space-y-2"}
+                className={
+                  selectedMarket.outcomes.length === 2 ? "grid grid-cols-2 gap-2" : "space-y-2"
+                }
                 role="group"
               >
                 {selectedMarket.outcomes.map((outcome, index) => (

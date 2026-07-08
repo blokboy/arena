@@ -75,7 +75,9 @@ describe("RandomParlaysModule", () => {
   test("renders a neutral empty state instead of an error when there is nothing to discover", () => {
     render(<RandomParlaysModule parlays={[]} />);
 
-    expect(screen.getByRole("region", { name: /discover parlays|random parlays/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: /discover parlays|random parlays/i })
+    ).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
   });
 });

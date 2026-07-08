@@ -26,10 +26,7 @@ export type Leaderboard = {
   mean: number | null;
 };
 
-export function insertMeanRow(
-  rows: LeaderboardRow[],
-  mean: number | null
-): LeaderboardRenderRow[] {
+export function insertMeanRow(rows: LeaderboardRow[], mean: number | null): LeaderboardRenderRow[] {
   if (mean === null) {
     return rows.map((row) => ({ kind: "user", ...row }));
   }

@@ -21,7 +21,8 @@ function mockFlowFetch(options?: { emptyEligibleLots?: boolean; failLegCreate?: 
   const calls: string[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
+    const url =
+      typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
     calls.push(url);
 
     if (url.includes("/api/markets?category=politics")) {
@@ -133,12 +134,7 @@ describe("ParlayCreateFlow", () => {
     await user.click(within(dialog).getByRole("button", { name: "Create parlay" }));
 
     await waitFor(() =>
-      expect(calls).toEqual(
-        expect.arrayContaining([
-          "/api/parlays",
-          "/api/parlays/parlay_1/legs"
-        ])
-      )
+      expect(calls).toEqual(expect.arrayContaining(["/api/parlays", "/api/parlays/parlay_1/legs"]))
     );
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/parlays"));
   });
@@ -175,8 +171,16 @@ describe("ParlayCreateFlow", () => {
     await user.click(screen.getByRole("button", { name: "Continue to first leg" }));
     await user.click(await screen.findByRole("button", { name: "Choose market" }));
 
-    expect(await screen.findByText("No eligible open lots are available for this outcome.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Buy a position" })).toHaveAttribute("href", "/markets");
-    expect(screen.getByRole("link", { name: "Review your portfolio" })).toHaveAttribute("href", "/portfolio");
+    expect(
+      await screen.findByText("No eligible open lots are available for this outcome.")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Buy a position" })).toHaveAttribute(
+      "href",
+      "/markets"
+    );
+    expect(screen.getByRole("link", { name: "Review your portfolio" })).toHaveAttribute(
+      "href",
+      "/portfolio"
+    );
   });
 });

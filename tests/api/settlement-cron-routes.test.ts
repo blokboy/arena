@@ -27,8 +27,12 @@ describe("settlement and stipend cron APIs", () => {
   test("reject settlement and stipend requests without the cron bearer secret", async () => {
     process.env.CRON_SECRET = "cron-secret";
 
-    const settlement = await runSettlement(new Request("http://arena.test/api/cron/settlement", { method: "GET" }));
-    const stipend = await runStipend(new Request("http://arena.test/api/cron/stipend", { method: "GET" }));
+    const settlement = await runSettlement(
+      new Request("http://arena.test/api/cron/settlement", { method: "GET" })
+    );
+    const stipend = await runStipend(
+      new Request("http://arena.test/api/cron/stipend", { method: "GET" })
+    );
 
     expect(settlement.status).toBe(401);
     await expect(settlement.json()).resolves.toEqual({ error: { code: "UNAUTHORIZED_CRON" } });

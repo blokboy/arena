@@ -20,14 +20,7 @@ import type { EligiblePositionLot } from "@/components/parlays/types";
 
 describe("ParlayRosterStep", () => {
   test("shows the roster-lock notice", () => {
-    render(
-      <ParlayRosterStep
-        name=""
-        searchQuery=""
-        selectedMembers={[]}
-        searchResults={[]}
-      />
-    );
+    render(<ParlayRosterStep name="" searchQuery="" selectedMembers={[]} searchResults={[]} />);
 
     expect(
       screen.getByText("Members can't be added later — only added members can append legs.")
@@ -194,9 +187,7 @@ describe("EligiblePositionCommitSelector (controlled)", () => {
   test("shows the locked-share warning", () => {
     render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{}} />);
 
-    expect(
-      screen.getByText(/committed shares are locked immediately/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/committed shares are locked immediately/i)).toBeInTheDocument();
     expect(screen.getByText(/lost to house/i)).toBeInTheDocument();
   });
 
@@ -229,34 +220,19 @@ describe("EligiblePositionCommitSelector (controlled)", () => {
   });
 
   test("reflects the controlled selectedCommitments value in each input", () => {
-    render(
-      <EligiblePositionCommitSelector
-        lots={lots}
-        selectedCommitments={{ "lot-1": "120" }}
-      />
-    );
+    render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{ "lot-1": "120" }} />);
 
     expect(screen.getByLabelText(/lot-1.*Yes.*0\.64/)).toHaveValue(120);
   });
 
   test("shows an inline error when the controlled value exceeds available shares", () => {
-    render(
-      <EligiblePositionCommitSelector
-        lots={lots}
-        selectedCommitments={{ "lot-2": "51" }}
-      />
-    );
+    render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{ "lot-2": "51" }} />);
 
     expect(screen.getByText("Only 50 shares available.")).toBeInTheDocument();
   });
 
   test("shows no inline error when the committed value is exactly all available shares", () => {
-    render(
-      <EligiblePositionCommitSelector
-        lots={lots}
-        selectedCommitments={{ "lot-2": "50" }}
-      />
-    );
+    render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{ "lot-2": "50" }} />);
 
     expect(screen.queryByText(/shares available/)).not.toBeInTheDocument();
   });
@@ -289,9 +265,7 @@ describe("EligiblePositionCommitSelector (controlled)", () => {
   });
 
   test("disables every commit input when disabled", () => {
-    render(
-      <EligiblePositionCommitSelector lots={lots} selectedCommitments={{}} disabled />
-    );
+    render(<EligiblePositionCommitSelector lots={lots} selectedCommitments={{}} disabled />);
 
     for (const input of screen.getAllByRole("spinbutton")) {
       expect(input).toBeDisabled();

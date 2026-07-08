@@ -153,7 +153,9 @@ describe("POST /api/positions/:id/sell", () => {
     const committedBuyResponse = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "64" }, user.id)
     );
-    const { position: committed } = (await committedBuyResponse.json()) as { position: { id: string } };
+    const { position: committed } = (await committedBuyResponse.json()) as {
+      position: { id: string };
+    };
     await prisma.position.update({
       where: { id: committed.id },
       data: { committedShares: "100" }
@@ -210,7 +212,9 @@ describe("POST /api/positions/sell-all", () => {
     expect(invalidBody.status).toBe(400);
     await expect(invalidBody.json()).resolves.toEqual({ error: { code: "INVALID_BODY" } });
 
-    const invalidOutcome = await sellAllPositions(sellAllRequest({ marketId: "market-democrat-win-2028" }, user.id));
+    const invalidOutcome = await sellAllPositions(
+      sellAllRequest({ marketId: "market-democrat-win-2028" }, user.id)
+    );
     expect(invalidOutcome.status).toBe(400);
     await expect(invalidOutcome.json()).resolves.toEqual({ error: { code: "INVALID_OUTCOME" } });
   });

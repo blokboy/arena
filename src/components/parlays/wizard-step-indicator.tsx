@@ -38,13 +38,7 @@ export function WizardStepIndicator({
   const currentIndex = steps.findIndex((step) => step.key === currentStep);
 
   return (
-    <ol
-      aria-label="Parlay creation steps"
-      className={cn(
-        "grid gap-3 sm:grid-cols-2",
-        className
-      )}
-    >
+    <ol aria-label="Parlay creation steps" className={cn("grid gap-3 sm:grid-cols-2", className)}>
       {steps.map((step, index) => {
         const isActive = step.key === currentStep;
         const isComplete = currentIndex > index;

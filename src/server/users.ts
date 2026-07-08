@@ -42,14 +42,14 @@ export function createMemoryUserRepository(
 
   return {
     async createUser(input) {
-        const user = {
-          id: `user_${state.nextId++}`,
-          username: input.username,
-          passwordHash: input.passwordHash,
-          balance: STARTING_BALANCE,
-          hasSeenStartingBalanceBanner: false,
-          stipendGrantedToday: false
-        };
+      const user = {
+        id: `user_${state.nextId++}`,
+        username: input.username,
+        passwordHash: input.passwordHash,
+        balance: STARTING_BALANCE,
+        hasSeenStartingBalanceBanner: false,
+        stipendGrantedToday: false
+      };
       users.set(user.username, user);
       ids.set(user.id, user);
       return user;
@@ -114,7 +114,7 @@ function toStoredUser(row: {
     passwordHash: row.passwordHash,
     balance: row.balance.toNumber(),
     hasSeenStartingBalanceBanner: row.signupBannerAt !== null,
-    stipendGrantedToday: row.stipendGrantedToday ?? ((row.stipendGrants?.length ?? 0) > 0)
+    stipendGrantedToday: row.stipendGrantedToday ?? (row.stipendGrants?.length ?? 0) > 0
   };
 }
 
@@ -189,9 +189,8 @@ const globalMemory = globalThis as typeof globalThis & {
   __arenaUserRepository?: UserRepository;
 };
 
-export const userRepository = (globalMemory.__arenaUserRepository ??=
-  shouldUseRealDatabase()
-    ? createPrismaUserRepository()
-    : createMemoryUserRepository(
-        (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
-      ));
+export const userRepository = (globalMemory.__arenaUserRepository ??= shouldUseRealDatabase()
+  ? createPrismaUserRepository()
+  : createMemoryUserRepository(
+      (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
+    ));

@@ -3,11 +3,7 @@ import { describe, expect, test } from "vitest";
 import { normalizeGammaEvent } from "@/domain/markets";
 import { prisma } from "@/server/db";
 import { marketCacheRepository } from "@/server/markets";
-import {
-  addFirstParlayLeg,
-  createDraftParlay,
-  listRandomParlays
-} from "@/server/parlays";
+import { addFirstParlayLeg, createDraftParlay, listRandomParlays } from "@/server/parlays";
 import { userRepository } from "@/server/users";
 import { binaryGammaEvent, multiOutcomeGammaEvent } from "@test/helpers/gamma-fixtures";
 

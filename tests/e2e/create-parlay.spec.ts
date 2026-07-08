@@ -63,20 +63,13 @@ test("user creates a regular parlay with a locked roster and an atomic first leg
   // --- Step 2: first leg — market/outcome pick reuses the same
   // MarketRow-style browsing as /markets (PRD Part IV §1), scoped to
   // Politics by default. ---
-  await expect(
-    page.getByRole("heading", { name: "First leg", exact: true })
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Choose market" })
-    .first()
-    .click();
+  await expect(page.getByRole("heading", { name: "First leg", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Choose market" }).first().click();
 
   const outcomeGroup = page.getByRole("group", { name: "Outcome" });
   await outcomeGroup.getByRole("button", { name: /^Yes/ }).click();
 
-  await expect(
-    page.getByText(/committed shares are locked immediately/i)
-  ).toBeVisible();
+  await expect(page.getByText(/committed shares are locked immediately/i)).toBeVisible();
 
   const shareInput = page.getByLabel(/Shares to commit for/i).first();
   await shareInput.fill("1");

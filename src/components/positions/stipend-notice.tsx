@@ -18,7 +18,8 @@ export function StipendNotice({ granted, onDismiss }: StipendNoticeProps) {
         <div>
           <h2 className="font-medium">Bankruptcy stipend received</h2>
           <p className="mt-1 text-sm text-slate-700">
-            The daily UTC stipend added +{BANKRUPTCY_STIPEND} points because your balance was at or below 0.
+            The daily UTC stipend added +{BANKRUPTCY_STIPEND} points because your balance was at or
+            below 0.
           </p>
         </div>
         <button

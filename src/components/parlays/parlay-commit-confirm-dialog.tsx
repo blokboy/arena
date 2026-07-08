@@ -85,7 +85,10 @@ export function ParlayCommitConfirmDialog({
       aria-label={title}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
     >
-      <div ref={dialogRef} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-lg">
+      <div
+        ref={dialogRef}
+        className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+      >
         <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">{commitmentSummary}</p>
 
@@ -95,7 +98,9 @@ export function ParlayCommitConfirmDialog({
           <p className="text-sm leading-6 text-amber-950">{houseRiskCopy}</p>
         </div>
 
-        {children ? <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">{children}</div> : null}
+        {children ? (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">{children}</div>
+        ) : null}
 
         {errorMessage ? (
           <p role="alert" className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
