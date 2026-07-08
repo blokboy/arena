@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vitest";
 
-import { describe, expect, test } from "vitest";
-
 import { normalizeGammaEvent } from "@/domain/markets";
 import { prisma } from "@/server/db";
 import { marketCacheRepository } from "@/server/markets";

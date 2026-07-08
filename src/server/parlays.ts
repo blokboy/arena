@@ -286,6 +286,9 @@ export async function addFirstParlayLeg(input: {
     if (!marketRow) {
       throw new Error("MARKET_NOT_FOUND");
     }
+    if (!marketRow.endDate) {
+      throw new Error("MARKET_END_DATE_MISSING");
+    }
     const marketEndDate = new Date(marketRow.endDate);
     const marketGammaId = marketRow.gammaId;
 

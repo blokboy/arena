@@ -21,7 +21,7 @@ function mockFlowFetch(options?: { emptyEligibleLots?: boolean; failLegCreate?: 
   const calls: string[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
     calls.push(url);
 
     if (url.includes("/api/markets?category=politics")) {
