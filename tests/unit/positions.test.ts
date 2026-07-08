@@ -8,7 +8,14 @@ import {
   groupPositions
 } from "../../src/domain/positions";
 import { createMemoryMarketCacheRepository } from "../../src/server/markets";
-import { buyPositionLot, createMemoryPositionRepository } from "../../src/server/positions";
+import {
+  buyPositionLot,
+  createMemoryPositionRepository,
+  sellAllPositions,
+  sellPositionLot,
+  type PositionRepository,
+  type StoredPositionLot
+} from "../../src/server/positions";
 import { createMemoryUserRepository } from "../../src/server/users";
 import { binaryGammaEvent } from "../../test/helpers/gamma-fixtures";
 
@@ -207,5 +214,293 @@ describe("buy operation", () => {
 
     expect(user.balance).toBe(1000);
     expect(await positions.listLotsByUserId(user.id)).toEqual([]);
+  });
+});
+
+describe("sell operation", () => {
+  function createStubPositionRepository(seedLots: StoredPositionLot[]): PositionRepository {
+    const lots = seedLots.map((lot) => ({ ...lot }));
+
+    return {
+      async createLot(_input) {
+        throw new Error("UNUSED");
+      },
+      async listLotsByUserId(userId) {
+        return lots.filter((lot) => lot.userId === userId).map((lot) => ({ ...lot }));
+      },
+      async listOpenLotsByUserMarketOutcome(userId, marketId, outcomeIndex) {
+        return lots
+          .filter(
+            (lot) =>
+              lot.userId === userId &&
+              lot.marketId === marketId &&
+              lot.outcomeIndex === outcomeIndex &&
+              lot.status === "OPEN"
+          )
+          .map((lot) => ({ ...lot }));
+      },
+      async findById(id) {
+        const lot = lots.find((candidate) => candidate.id === id);
+        return lot ? { ...lot } : undefined;
+      },
+      async applySellResult(id, input) {
+        const lot = lots.find((candidate) => candidate.id === id);
+        if (!lot) {
+          return undefined;
+        }
+
+        lot.shares = input.shares;
+        lot.stake = input.stake;
+        if (input.status) {
+          lot.status = input.status;
+        }
+        if (input.exitPrice !== undefined) {
+          lot.exitPrice = input.exitPrice;
+        }
+        if (input.exitedAt !== undefined) {
+          lot.exitedAt = input.exitedAt;
+        }
+        return { ...lot };
+      },
+      async clear() {
+        lots.length = 0;
+      }
+    };
+  }
+
+  async function createSellHarness(
+    seedLots: (ids: { ownerId: string; otherUserId: string }) => StoredPositionLot[]
+  ) {
+    const users = createMemoryUserRepository();
+    const marketCache = createMemoryMarketCacheRepository();
+
+    const event = binaryGammaEvent();
+    await marketCache.upsertCategoryEvents({
+      category: "Politics",
+      events: [
+        normalizeGammaEvent(event, {
+          category: "Politics",
+          lastSyncedAt: "2026-07-06T12:00:00.000Z"
+        })
+      ]
+    });
+
+    const owner = await users.createUser({ username: "owner", passwordHash: "hashed" });
+    const otherUser = await users.createUser({ username: "other", passwordHash: "hashed" });
+    const positions = createStubPositionRepository(
+      seedLots({ ownerId: owner.id, otherUserId: otherUser.id })
+    );
+    return { users, marketCache, positions, owner, otherUser };
+  }
+
+  it("rejects selling someone else's lot", async () => {
+    const { marketCache, positions, users, owner, otherUser } = await createSellHarness(
+      ({ ownerId }) => [
+        {
+          id: "lot-1",
+          userId: ownerId,
+          marketId: "market-democrat-win-2028",
+          marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+          outcomeIndex: 0,
+          outcomeLabel: "Yes",
+          status: "OPEN",
+          stake: "100",
+          shares: "156.25",
+          committedShares: "0",
+          entryPrice: "0.64",
+          purchasedAt: "2026-07-06T12:00:00.000Z"
+        }
+      ]
+    );
+
+    await expect(
+      sellPositionLot({
+        user: otherUser,
+        positionId: "lot-1",
+        now: new Date("2026-07-06T13:00:00.000Z"),
+        marketCache,
+        positions,
+        users
+      })
+    ).rejects.toThrow("POSITION_NOT_OWNED");
+  });
+
+  it("rejects lots with no available shares to sell", async () => {
+    const { marketCache, positions, users, owner } = await createSellHarness(({ ownerId }) => [
+      {
+        id: "lot-1",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "90",
+        shares: "140.625",
+        committedShares: "140.625",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:00:00.000Z"
+      }
+    ]);
+
+    await expect(
+      sellPositionLot({
+        user: owner,
+        positionId: "lot-1",
+        now: new Date("2026-07-06T13:00:00.000Z"),
+        marketCache,
+        positions,
+        users
+      })
+    ).rejects.toThrow("NO_AVAILABLE_SHARES");
+  });
+
+  it("keeps a lot OPEN when selling only its uncommitted portion", async () => {
+    const { marketCache, positions, users, owner } = await createSellHarness(({ ownerId }) => [
+      {
+        id: "lot-1",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "250",
+        shares: "390.625",
+        committedShares: "140.625",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:00:00.000Z"
+      }
+    ]);
+
+    const result = await sellPositionLot({
+      user: owner,
+      positionId: "lot-1",
+      now: new Date("2026-07-06T13:00:00.000Z"),
+      marketCache,
+      positions,
+      users
+    });
+
+    expect(result.proceeds).toBe("155");
+    expect(result.balance).toBe(1155);
+    expect(result.lot).toMatchObject({
+      id: "lot-1",
+      status: "OPEN",
+      shares: "140.625",
+      committedShares: "140.625",
+      stake: "90"
+    });
+    expect(result.lot.exitPrice).toBeUndefined();
+    expect(result.lot.exitedAt).toBeUndefined();
+  });
+
+  it("marks a lot SOLD only when the sell empties the lot entirely", async () => {
+    const { marketCache, positions, users, owner } = await createSellHarness(({ ownerId }) => [
+      {
+        id: "lot-1",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "100",
+        shares: "156.25",
+        committedShares: "0",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:00:00.000Z"
+      }
+    ]);
+
+    const result = await sellPositionLot({
+      user: owner,
+      positionId: "lot-1",
+      now: new Date("2026-07-06T13:00:00.000Z"),
+      marketCache,
+      positions,
+      users
+    });
+
+    expect(result.proceeds).toBe("96.875");
+    expect(result.balance).toBe(1096.875);
+    expect(result.lot).toMatchObject({
+      id: "lot-1",
+      status: "SOLD",
+      shares: "0",
+      stake: "0",
+      exitPrice: "0.62",
+      exitedAt: "2026-07-06T13:00:00.000Z"
+    });
+  });
+
+  it("sums sell-all proceeds across open lots and excludes fully committed ones", async () => {
+    const { marketCache, positions, users, owner } = await createSellHarness(({ ownerId }) => [
+      {
+        id: "lot-1",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "64",
+        shares: "100",
+        committedShares: "0",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:00:00.000Z"
+      },
+      {
+        id: "lot-2",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "128",
+        shares: "200",
+        committedShares: "50",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:05:00.000Z"
+      },
+      {
+        id: "lot-3",
+        userId: ownerId,
+        marketId: "market-democrat-win-2028",
+        marketQuestion: "Will a Democrat win the 2028 US presidential election?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "32",
+        shares: "50",
+        committedShares: "50",
+        entryPrice: "0.64",
+        purchasedAt: "2026-07-06T12:10:00.000Z"
+      }
+    ]);
+
+    const result = await sellAllPositions({
+      user: owner,
+      marketId: "market-democrat-win-2028",
+      outcomeIndex: 0,
+      now: new Date("2026-07-06T13:00:00.000Z"),
+      marketCache,
+      positions,
+      users
+    });
+
+    expect(result.proceeds).toBe("155");
+    expect(result.balance).toBe(1155);
+    expect(result.lots).toEqual([
+      expect.objectContaining({ id: "lot-1", status: "SOLD", shares: "0", stake: "0" }),
+      expect.objectContaining({
+        id: "lot-2",
+        status: "OPEN",
+        shares: "50",
+        committedShares: "50",
+        stake: "32"
+      })
+    ]);
   });
 });

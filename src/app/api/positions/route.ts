@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { currentUserFromHeaders } from "@/server/current-user";
-import { buyPositionLot } from "@/server/positions";
+import { buyPositionLot, listPositionLots } from "@/server/positions";
 
 const BUY_ERROR_STATUSES: Record<string, number> = {
   INVALID_OUTCOME: 400,
@@ -12,6 +12,27 @@ const BUY_ERROR_STATUSES: Record<string, number> = {
   PRICE_UNAVAILABLE: 409,
   INSUFFICIENT_BALANCE: 422
 };
+
+export async function GET(request: Request) {
+  const user = await currentUserFromHeaders(request.headers);
+  if (!user) {
+    return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const marketId = url.searchParams.get("marketId");
+  if (marketId !== null && marketId.trim() === "") {
+    return NextResponse.json({ error: { code: "INVALID_MARKET_ID" } }, { status: 400 });
+  }
+
+  const positions = await listPositionLots({
+    userId: user.id,
+    marketId: marketId ?? undefined,
+    now: new Date()
+  });
+
+  return NextResponse.json({ positions });
+}
 
 export async function POST(request: Request) {
   const user = await currentUserFromHeaders(request.headers);

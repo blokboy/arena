@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { BuyPanel } from "@/components/markets/buy-panel";
+import { MarketSellPanelWrapper } from "@/components/positions/market-sell-panel-wrapper";
 import { currentUserOrRedirect } from "@/server/authenticated-user";
 import { marketCacheRepository, refreshMarketIfStale } from "@/server/markets";
 
@@ -56,6 +57,14 @@ export default async function MarketDetailPage({
 
           <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
             <BuyPanel market={market} balance={user.balance} />
+
+            <MarketSellPanelWrapper
+              marketId={market.gammaId}
+              marketQuestion={market.question}
+              bestBid={market.bestBid}
+              marketClosed={market.closed}
+              priceLastSyncedAt={market.lastSyncedAt}
+            />
 
             <aside className="rounded-md border border-slate-200 bg-white p-4">
               <h2 className="text-sm font-semibold text-slate-950">Market</h2>
