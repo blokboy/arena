@@ -17,6 +17,7 @@ export type UserRepository = {
   findById(id: string): Promise<StoredUser | undefined>;
   markStartingBalanceBannerSeen(id: string): Promise<StoredUser | undefined>;
   updateBalance(id: string, balance: number): Promise<StoredUser | undefined>;
+  searchByUsername(query: string): Promise<Array<{ id: string; username: string }>>;
   clear(): Promise<void>;
 };
 
@@ -76,6 +77,16 @@ export function createMemoryUserRepository(
 
       user.balance = balance;
       return user;
+    },
+    async searchByUsername(query) {
+      const lower = query.toLowerCase();
+      const matches: Array<{ id: string; username: string }> = [];
+      for (const user of users.values()) {
+        if (user.username.toLowerCase().includes(lower)) {
+          matches.push({ id: user.id, username: user.username });
+        }
+      }
+      return matches;
     },
     async clear() {
       users.clear();
@@ -157,6 +168,14 @@ export function createPrismaUserRepository(): UserRepository {
       } catch {
         return undefined;
       }
+    },
+    async searchByUsername(query) {
+      const rows = await prisma.user.findMany({
+        where: { username: { contains: query, mode: "insensitive" } },
+        select: { id: true, username: true },
+        take: 20
+      });
+      return rows.map((row) => ({ id: row.id, username: row.username }));
     },
     async clear() {
       await prisma.bankruptcyStipendGrant.deleteMany();

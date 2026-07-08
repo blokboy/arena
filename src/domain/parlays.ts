@@ -58,6 +58,22 @@ export type HouseTransaction = Readonly<{
   legId: string;
 }>;
 
+export type Commitment = Readonly<{
+  positionId: string;
+  shares: string;
+}>;
+
+export type CommitmentValidationPosition = Readonly<{
+  id: string;
+  userId: string;
+  marketId: string;
+  outcomeIndex: number;
+  shares: string;
+  committedShares: string;
+  stake: string;
+  status: string;
+}>;
+
 export class RegularParlayDomainError extends Error {
   constructor(
     public readonly code:
@@ -68,9 +84,122 @@ export class RegularParlayDomainError extends Error {
       | "ACTIVE_LEG_REQUIRED"
       | "LEG_APPEND_TOO_EARLY"
       | "LEG_NOT_FOUND"
+      | "NO_COMMITMENTS"
+      | "POSITION_NOT_FOUND"
+      | "POSITION_NOT_OWNED"
+      | "POSITION_NOT_OPEN"
+      | "POSITION_WRONG_MARKET"
+      | "POSITION_WRONG_OUTCOME"
+      | "INSUFFICIENT_AVAILABLE_SHARES"
   ) {
     super(code);
   }
+}
+
+export function validateCommitments(input: {
+  commitments: readonly Commitment[];
+  positions: readonly CommitmentValidationPosition[];
+  userId: string;
+  marketId: string;
+  outcomeIndex: number;
+}): void {
+  if (input.commitments.length === 0) {
+    throw new RegularParlayDomainError("NO_COMMITMENTS");
+  }
+
+  const positionMap = new Map(input.positions.map((p) => [p.id, p]));
+
+  for (const commit of input.commitments) {
+    const position = positionMap.get(commit.positionId);
+    if (!position) {
+      throw new RegularParlayDomainError("POSITION_NOT_FOUND");
+    }
+    if (position.userId !== input.userId) {
+      throw new RegularParlayDomainError("POSITION_NOT_OWNED");
+    }
+    if (position.status !== "OPEN") {
+      throw new RegularParlayDomainError("POSITION_NOT_OPEN");
+    }
+
+    const requested = parseCommitDecimal(commit.shares);
+    const shares = parseCommitDecimal(position.shares);
+    const committed = parseCommitDecimal(position.committedShares);
+    const available = {
+      value: shares.value - committed.value,
+      scale: shares.scale
+    };
+
+    if (requested.value <= 0n) {
+      throw new RegularParlayDomainError("INSUFFICIENT_AVAILABLE_SHARES");
+    }
+    if (requested.value > available.value) {
+      throw new RegularParlayDomainError("INSUFFICIENT_AVAILABLE_SHARES");
+    }
+
+    if (position.marketId !== input.marketId) {
+      throw new RegularParlayDomainError("POSITION_WRONG_MARKET");
+    }
+    if (position.outcomeIndex !== input.outcomeIndex) {
+      throw new RegularParlayDomainError("POSITION_WRONG_OUTCOME");
+    }
+  }
+}
+
+export function computeCommittedPrincipal(input: {
+  commitment: Commitment;
+  position: CommitmentValidationPosition;
+}): string {
+  const commitShares = parseCommitDecimal(input.commitment.shares);
+  const totalShares = parseCommitDecimal(input.position.shares);
+  const totalStake = parseCommitDecimal(input.position.stake);
+  const numerator = commitShares.value * totalStake.value;
+  const denominator = totalShares.value;
+  if (denominator === 0n) {
+    throw new RegularParlayDomainError("POSITION_NOT_FOUND");
+  }
+  const precision = 6;
+  const result = {
+    value: (numerator * 10n ** BigInt(precision)) / denominator,
+    scale: totalStake.scale + precision
+  };
+  return formatCommitDecimal(result);
+}
+
+export function sumCommitDecimals(values: readonly string[]): string {
+  if (values.length === 0) return "0";
+  const decimals = values.map(parseCommitDecimal);
+  const maxScale = Math.max(...decimals.map((d) => d.scale));
+  let total = 0n;
+  for (const d of decimals) {
+    total += d.value * 10n ** BigInt(maxScale - d.scale);
+  }
+  while (total % 10n === 0n && maxScale > 0) {
+    const reduced = { value: total / 10n, scale: maxScale - 1 };
+    if (reduced.value * 10n === total) {
+      total = reduced.value;
+    }
+    break;
+  }
+  return formatCommitDecimal({ value: total, scale: maxScale });
+}
+
+function parseCommitDecimal(input: string): { value: bigint; scale: number } {
+  const normalized = input.trim();
+  const [integerPart = "0", fractionPart = ""] = normalized.split(".");
+  const digits = `${integerPart}${fractionPart}`.replace(/^0+(?=\d)/, "");
+  return {
+    value: BigInt(digits || "0"),
+    scale: fractionPart.length
+  };
+}
+
+function formatCommitDecimal(decimal: { value: bigint; scale: number }): string {
+  const absolute = decimal.value < 0n ? -decimal.value : decimal.value;
+  const digits = absolute.toString().padStart(decimal.scale + 1, "0");
+  const integer = decimal.scale === 0 ? digits : digits.slice(0, digits.length - decimal.scale);
+  const fraction = decimal.scale === 0 ? "" : digits.slice(digits.length - decimal.scale);
+  const trimmedFraction = fraction.replace(/0+$/, "");
+  return trimmedFraction.length > 0 ? `${integer}.${trimmedFraction}` : integer;
 }
 
 export function createRegularParlay(input: CreateRegularParlayInput): RegularParlay {

@@ -21,6 +21,7 @@ enum ParlayKind {
 }
 
 enum ParlayStatus {
+  DRAFT
   ACTIVE
   WON
   LOST
@@ -104,7 +105,7 @@ model Parlay {
   name         String
   dayKey       String?
   creatorId    String?
-  status       ParlayStatus @default(ACTIVE)
+  status       ParlayStatus @default(DRAFT)
   rolloverUsed Int          @default(0)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
