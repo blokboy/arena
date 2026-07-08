@@ -63,6 +63,8 @@ export function groupPositions(lots: PositionLot[]): PositionGroup[] {
     const existing = groups.get(key);
 
     if (!existing) {
+      const totalStake = normalizeDecimal(lot.stake);
+      const totalShares = normalizeDecimal(lot.shares);
       groups.set(key, {
         marketId: lot.marketId,
         marketQuestion: lot.marketQuestion,
@@ -70,14 +72,11 @@ export function groupPositions(lots: PositionLot[]): PositionGroup[] {
         outcomeLabel: lot.outcomeLabel,
         status: lot.status,
         lots: [lot],
-        totalStake: normalizeDecimal(lot.stake),
-        totalShares: normalizeDecimal(lot.shares),
+        totalStake,
+        totalShares,
         committedShares: normalizeDecimal(lot.committedShares),
         availableShares: getAvailableShares(lot),
-        averageEntryPrice: divideDecimals(
-          parseDecimal(lot.stake, "INVALID_STAKE"),
-          parseDecimal(lot.shares, "INVALID_SHARES")
-        )
+        averageEntryPrice: averageEntryPriceForGroup([lot], totalStake, totalShares)
       });
       continue;
     }
@@ -87,13 +86,39 @@ export function groupPositions(lots: PositionLot[]): PositionGroup[] {
     existing.totalShares = addDecimalStrings(existing.totalShares, lot.shares);
     existing.committedShares = addDecimalStrings(existing.committedShares, lot.committedShares);
     existing.availableShares = addDecimalStrings(existing.availableShares, getAvailableShares(lot));
-    existing.averageEntryPrice = divideDecimals(
-      parseDecimal(existing.totalStake, "INVALID_STAKE"),
-      parseDecimal(existing.totalShares, "INVALID_SHARES")
+    existing.averageEntryPrice = averageEntryPriceForGroup(
+      existing.lots,
+      existing.totalStake,
+      existing.totalShares
     );
   }
 
   return [...groups.values()];
+}
+
+// A fully sold lot has its remaining shares zeroed out (see
+// getSellTransition in src/server/positions.ts), so once a group's total
+// shares hits zero, blending by stake/shares is a division by zero rather
+// than a meaningful "still open" average. Each lot's own entryPrice never
+// changes across partial sells, so fall back to a plain mean of the lots'
+// recorded entry prices instead of crashing the render.
+function averageEntryPriceForGroup(
+  lots: PositionLot[],
+  totalStake: string,
+  totalShares: string
+): string {
+  if (parseDecimal(totalShares, "INVALID_SHARES").value === 0n) {
+    const sum = lots.reduce(
+      (total, lot) => addDecimals(total, parseDecimal(lot.entryPrice, "INVALID_PRICE")),
+      { value: 0n, scale: 0 }
+    );
+    return divideDecimals(sum, { value: BigInt(lots.length), scale: 0 });
+  }
+
+  return divideDecimals(
+    parseDecimal(totalStake, "INVALID_STAKE"),
+    parseDecimal(totalShares, "INVALID_SHARES")
+  );
 }
 
 export function getAvailableShares(input: { shares: string; committedShares: string }): string {
