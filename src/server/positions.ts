@@ -592,19 +592,33 @@ export async function sellPositionLot(input: {
       now: input.now
     });
 
-    await tx.user.update({
-      where: { id: input.user.id },
-      data: { balance: { increment: proceeds } }
-    });
-    const updatedRow = await tx.position.update({
-      where: { id: input.positionId },
+    // Guard the position write against a concurrent sell of the same lot —
+    // the same guarded-conditional-update pattern buyPositionLot's
+    // debitAndCreateLot uses for the balance decrement. Tying the WHERE to
+    // the exact shares/status snapshot just read means Postgres re-checks it
+    // against the row's live value inside this UPDATE, serialized by the row
+    // lock the UPDATE itself takes: a second concurrent sell that read the
+    // same pre-sale shares matches zero rows here instead of double-crediting.
+    const positionUpdate = await tx.position.updateMany({
+      where: { id: input.positionId, status: "OPEN", shares: currentLot.shares },
       data: {
         shares: result.shares,
         stake: result.stake,
         ...(result.status ? { status: result.status } : {}),
         ...(result.exitPrice !== undefined ? { exitPrice: result.exitPrice } : {}),
         ...(result.exitedAt !== undefined ? { exitedAt: new Date(result.exitedAt) } : {})
-      },
+      }
+    });
+    if (positionUpdate.count === 0) {
+      throw new Error("POSITION_CONFLICT");
+    }
+
+    await tx.user.update({
+      where: { id: input.user.id },
+      data: { balance: { increment: proceeds } }
+    });
+    const updatedRow = await tx.position.findUniqueOrThrow({
+      where: { id: input.positionId },
       include: POSITION_INCLUDE
     });
     const updatedUser = await tx.user.findUniqueOrThrow({ where: { id: input.user.id } });
@@ -730,28 +744,39 @@ export async function sellAllPositions(input: {
       "0"
     );
 
-    await tx.user.update({
-      where: { id: input.user.id },
-      data: { balance: { increment: currentProceeds } }
-    });
-
     const updatedLots: StoredPositionLot[] = [];
     for (const [index, { lot }] of currentSellable.entries()) {
       const result = currentTransitions[index]!.result;
-      const updatedRow = await tx.position.update({
-        where: { id: lot.id },
+      // Same guarded-conditional-update pattern as sellPositionLot: tie the
+      // WHERE to the exact pre-sale shares snapshot so a concurrent sell of
+      // the same lot can't double-apply within this all-or-nothing sell-all
+      // — any guard failure throws and rolls back the whole transaction,
+      // including the balance credit below, which only happens after every
+      // lot in the group has updated successfully.
+      const positionUpdate = await tx.position.updateMany({
+        where: { id: lot.id, status: "OPEN", shares: lot.shares },
         data: {
           shares: result.shares,
           stake: result.stake,
           ...(result.status ? { status: result.status } : {}),
           ...(result.exitPrice !== undefined ? { exitPrice: result.exitPrice } : {}),
           ...(result.exitedAt !== undefined ? { exitedAt: new Date(result.exitedAt) } : {})
-        },
+        }
+      });
+      if (positionUpdate.count === 0) {
+        throw new Error("POSITION_CONFLICT");
+      }
+      const updatedRow = await tx.position.findUniqueOrThrow({
+        where: { id: lot.id },
         include: POSITION_INCLUDE
       });
       updatedLots.push(await toStoredLotWithGammaMarketId(updatedRow));
     }
 
+    await tx.user.update({
+      where: { id: input.user.id },
+      data: { balance: { increment: currentProceeds } }
+    });
     const updatedUser = await tx.user.findUniqueOrThrow({ where: { id: input.user.id } });
     return {
       lots: updatedLots,

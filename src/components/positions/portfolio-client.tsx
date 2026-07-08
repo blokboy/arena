@@ -118,9 +118,12 @@ export function PortfolioClient() {
     };
   }, []);
 
-  const rawOpenLots = positions.filter(
-    (lot) => lot.status === "OPEN" && lot.currentBestBid !== null
-  );
+  // An OPEN lot must stay visible even when its market has no live bestBid
+  // right now (PRICE_UNAVAILABLE / stale sync) — "no price to sell at" is a
+  // disabled-sell-affordance state, not a reason for an open position to
+  // disappear from the portfolio. groupWithSellValues already tolerates a
+  // null bestBid per group (falls back to no currentSellValue).
+  const rawOpenLots = positions.filter((lot) => lot.status === "OPEN");
   const rawSettledLots = positions.filter(
     (lot) => lot.status !== "OPEN"
   );
