@@ -5,6 +5,7 @@ import {
   resetMarketGammaClientForTesting,
   setMarketGammaClientForTesting
 } from "@/server/markets";
+import { clearParlayData, resetParlayRandomForTesting } from "@/server/parlays";
 import { positionRepository } from "@/server/positions";
 import { userRepository } from "@/server/users";
 
@@ -20,11 +21,13 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  await clearParlayData();
   // Order matters against real Postgres: Position has FKs into both User
   // and CachedMarket, so it must be cleared first.
   await positionRepository.clear();
   await userRepository.clear();
   await marketCacheRepository.clear();
   resetMarketGammaClientForTesting();
+  resetParlayRandomForTesting();
   delete process.env.CRON_SECRET;
 });

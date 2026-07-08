@@ -17,10 +17,30 @@ export type LeaderboardRow = {
   balance: number;
 };
 
+export type LeaderboardRenderRow =
+  | { kind: "user"; rank: number; userId: string; username: string; balance: number }
+  | { kind: "mean"; balance: number };
+
 export type Leaderboard = {
   rows: LeaderboardRow[];
   mean: number | null;
 };
+
+export function insertMeanRow(
+  rows: LeaderboardRow[],
+  mean: number | null
+): LeaderboardRenderRow[] {
+  if (mean === null) {
+    return rows.map((row) => ({ kind: "user", ...row }));
+  }
+
+  const meanEntry: LeaderboardRenderRow = { kind: "mean", balance: mean };
+  const insertAt = rows.findIndex((row) => row.balance < mean);
+
+  const renderRows: LeaderboardRenderRow[] = rows.map((row) => ({ kind: "user", ...row }));
+  renderRows.splice(insertAt === -1 ? renderRows.length : insertAt, 0, meanEntry);
+  return renderRows;
+}
 
 export function buildLeaderboard(input: LeaderboardInput): Leaderboard {
   const activeUserIds = new Set([...input.positionUserIds, ...input.legStakeUserIds]);
