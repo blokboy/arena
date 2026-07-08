@@ -23,7 +23,7 @@ import {
   syncAllMarketCategories
 } from "../../src/server/markets";
 import { refreshOpenPositionMarkets } from "../../src/server/settlement";
-import { gammaRateLimited, GAMMA_BASE_URL } from "../../test/helpers/gamma/handlers";
+import { GAMMA_BASE_URL } from "../../test/helpers/gamma/handlers";
 import { gammaServer } from "../../test/helpers/gamma/server";
 
 beforeAll(() => gammaServer.listen({ onUnhandledRequest: "error" }));
@@ -98,8 +98,15 @@ describe("two-tier cache (server-side Gamma client)", () => {
 
   it("trade-time refresh hits Gamma exactly once when the TTL has expired, then updates lastSyncedAt", async () => {
     const now = new Date("2026-01-15T12:00:00.000Z");
-    await seedCachedPoliticsEvent({}, "2026-01-15T11:59:00.000Z");
-    const cached = await marketCacheRepository.findMarketByGammaId("market-democrat-win-2028");
+    await seedCachedPoliticsEvent(
+      {
+        id: "500001",
+        slug: "incumbent-win-2026",
+        question: "Will the incumbent win the 2026 election?"
+      },
+      "2026-01-15T11:59:00.000Z"
+    );
+    const cached = await marketCacheRepository.findMarketByGammaId("500001");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const refreshed = await refreshMarketIfStale({
@@ -160,8 +167,15 @@ describe("rate limiter + degradation (PRD §6.3)", () => {
 
   it("a limiter-skipped trade-time refresh serves the last-cached price with its lastSyncedAt — never fails the trade", async () => {
     const now = new Date("2026-01-15T12:00:00.000Z");
-    await seedCachedPoliticsEvent({}, "2026-01-15T11:59:00.000Z");
-    const cached = await marketCacheRepository.findMarketByGammaId("market-democrat-win-2028");
+    await seedCachedPoliticsEvent(
+      {
+        id: "500001",
+        slug: "incumbent-win-2026",
+        question: "Will the incumbent win the 2026 election?"
+      },
+      "2026-01-15T11:59:00.000Z"
+    );
+    const cached = await marketCacheRepository.findMarketByGammaId("500001");
 
     for (let attempt = 0; attempt < GAMMA_TESTING_CONSTANTS.TOKEN_BUCKET_CAPACITY; attempt += 1) {
       await gammaClient.fetchMarketById("500001");

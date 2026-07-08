@@ -24,13 +24,17 @@ describe("market cache sync", () => {
         now: new Date("2026-07-06T12:00:00.000Z")
       });
 
-      expect(gammaClient.fetchEventsByTag).toHaveBeenCalledWith(CATEGORY_TAGS[category].tagId, {
-        active: true,
-        closed: false,
-        order: "volume",
-        ascending: false,
-        limit: 10
-      });
+      expect(gammaClient.fetchEventsByTag).toHaveBeenCalledWith(
+        CATEGORY_TAGS[category].tagId,
+        {
+          active: true,
+          closed: false,
+          order: "volume",
+          ascending: false,
+          limit: 10
+        },
+        { purpose: "cron" }
+      );
     }
   );
 

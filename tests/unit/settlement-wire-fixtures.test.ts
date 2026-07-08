@@ -32,12 +32,10 @@ describe("resolution vs void detection on raw fixtures", () => {
     expect(detectMarketResolution(marketVoided as GammaMarket)).toEqual({ status: "VOIDED" });
   });
 
-  it("multi-outcome collapse — PROVISIONAL fixture, see PRD Part III §6.1", () => {
-    // The PRD flags this as a pre-implementation verification task: the
-    // fixture assumes multi-outcome markets collapse like binary ones. If a
-    // real recorded response contradicts this, the detection rule (and this
-    // fixture) must change BEFORE the settlement job is built — otherwise
-    // legitimately-resolved multi-outcome markets would be refunded as voided.
+  it("generic N-outcome 1/0 collapse still resolves deterministically", () => {
+    // ADR-0004 verified that live Gamma market rows are always binary, so
+    // this fixture is parser-hardening rather than a reachable production
+    // wire shape. The detector still handles it generically.
     expect(detectMarketResolution(marketResolvedMulti as GammaMarket)).toEqual({
       status: "RESOLVED",
       winningOutcomeIndex: 1,

@@ -54,6 +54,7 @@ export function resolvedBinaryGammaMarket(): GammaMarket {
   return {
     id: "market-democrat-win-2028",
     question: "Will a Democrat win the 2028 US presidential election?",
+    slug: "democrat-win-2028",
     outcomes: ["Yes", "No"],
     outcomePrices: ["1", "0"],
     active: false,
@@ -65,6 +66,7 @@ export function resolvedMultiOutcomeGammaMarket(): GammaMarket {
   return {
     id: "market-world-cup-winner",
     question: "Who will win the World Cup?",
+    slug: "world-cup-winner",
     outcomes: ["France", "Brazil", "Japan"],
     outcomePrices: ["0", "1", "0"],
     active: false,
@@ -76,6 +78,7 @@ export function voidedGammaMarket(): GammaMarket {
   return {
     id: "market-voided",
     question: "Will this market be voided?",
+    slug: "will-this-market-be-voided",
     outcomes: ["Yes", "No"],
     outcomePrices: ["0.5", "0.5"],
     active: false,

@@ -127,7 +127,12 @@ describe("settlement sweep", () => {
       now: new Date("2026-01-15T12:05:00.000Z"),
       gammaClient: {
         fetchEventsByTag: async () => [],
-        fetchMarketById: async () => voidedGammaMarket()
+        fetchMarketById: async () => ({
+          ...voidedGammaMarket(),
+          id: "market-democrat-win-2028",
+          slug: "democrat-win-2028",
+          question: "Will a Democrat win the 2028 US presidential election?"
+        })
       }
     });
 
