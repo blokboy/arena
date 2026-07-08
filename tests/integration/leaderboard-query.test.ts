@@ -5,7 +5,7 @@ import { prisma } from "@/server/db";
 import { listLeaderboard } from "@/server/leaderboard";
 import { marketCacheRepository } from "@/server/markets";
 import { userRepository } from "@/server/users";
-import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
+import { binaryGammaEvent, multiOutcomeGammaEvent } from "@test/helpers/gamma-fixtures";
 
 // These exercise listLeaderboard()'s real Postgres aggregation directly
 // (distinct-userId queries against Position/LegStake), complementing
@@ -27,6 +27,30 @@ async function seedCachedMarket() {
   });
   if (!market) {
     throw new Error("TEST_MARKET_NOT_FOUND");
+  }
+
+  return market.id;
+}
+
+// ParlayLeg has @@unique([parlayId, marketId]) — a parlay can only carry one
+// leg per market, so a parlay with two legs needs a second, distinct market.
+async function seedSecondCachedMarket() {
+  await marketCacheRepository.upsertCategoryEvents({
+    category: "Sports",
+    events: [
+      normalizeGammaEvent(multiOutcomeGammaEvent(), {
+        category: "Sports",
+        lastSyncedAt: "2026-01-15T11:00:00.000Z"
+      })
+    ]
+  });
+
+  const market = await prisma.cachedMarket.findUnique({
+    where: { gammaId: "market-world-cup-winner" },
+    select: { id: true }
+  });
+  if (!market) {
+    throw new Error("TEST_SECOND_MARKET_NOT_FOUND");
   }
 
   return market.id;
@@ -66,6 +90,7 @@ describe("listLeaderboard", () => {
 
   test("counts a user active from a LegStake alone, deduped across multiple stakes", async () => {
     const marketId = await seedCachedMarket();
+    const secondMarketId = await seedSecondCachedMarket();
     const priya = await userRepository.createUser({ username: "priya", passwordHash: "hashed" });
 
     const parlay = await prisma.parlay.create({
@@ -84,7 +109,7 @@ describe("listLeaderboard", () => {
     const legB = await prisma.parlayLeg.create({
       data: {
         parlayId: parlay.id,
-        marketId,
+        marketId: secondMarketId,
         outcomeIndex: 1,
         resolutionAt: new Date("2028-11-09T00:00:00.000Z"),
         sortKey: "2|leg-b",
