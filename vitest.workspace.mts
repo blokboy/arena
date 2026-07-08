@@ -32,7 +32,15 @@ export default defineWorkspace([
       },
       env: {
         USE_TEST_DATABASE: "true",
-        DATABASE_URL: "postgresql://arena:arena@localhost:5432/arena_test"
+        // docker-compose.test.yml maps its throwaway Postgres to host port
+        // 5433 specifically so it never collides with docker-compose.yml's
+        // persistent dev Postgres on 5432 (see that file's header comment).
+        // CI sets its own DATABASE_URL (port 5432, no local-dev collision
+        // risk on an ephemeral runner) via job-level env, which process.env
+        // already carries by the time this config is evaluated — the `??`
+        // only supplies the local-dev default.
+        DATABASE_URL:
+          process.env.DATABASE_URL ?? "postgresql://arena:arena@localhost:5433/arena_test"
       }
     }
   },
@@ -50,7 +58,8 @@ export default defineWorkspace([
       },
       env: {
         USE_TEST_DATABASE: "true",
-        DATABASE_URL: "postgresql://arena:arena@localhost:5432/arena_test",
+        DATABASE_URL:
+          process.env.DATABASE_URL ?? "postgresql://arena:arena@localhost:5433/arena_test",
         AUTH_SECRET: "test-auth-secret"
       }
     }
