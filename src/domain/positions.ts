@@ -248,3 +248,51 @@ function formatDecimal(decimal: Decimal): string {
 
   return trimmedFraction.length > 0 ? `${sign}${integer}.${trimmedFraction}` : `${sign}${integer}`;
 }
+
+function parseEligibleDecimal(input: string): Decimal {
+  const normalized = input.trim();
+  const [integerPart = "0", fractionPart = ""] = normalized.split(".");
+  const digits = `${integerPart}${fractionPart}`.replace(/^0+(?=\d)/, "");
+  return {
+    value: BigInt(digits || "0"),
+    scale: fractionPart.length
+  };
+}
+
+export type EligiblePositionForCommit = Readonly<{
+  id: string;
+  marketId: string;
+  outcomeIndex: number;
+  availableShares: string;
+}>;
+
+export function selectEligiblePositionsForCommit(
+  lots: readonly PositionLot[],
+  target: { marketId: string; outcomeIndex: number }
+): EligiblePositionForCommit[] {
+  const result: EligiblePositionForCommit[] = [];
+
+  for (const lot of lots) {
+    if (lot.status !== "OPEN") continue;
+    if (lot.marketId !== target.marketId) continue;
+    if (lot.outcomeIndex !== target.outcomeIndex) continue;
+
+    const total = parseEligibleDecimal(lot.shares);
+    const committed = parseEligibleDecimal(lot.committedShares);
+    const available: Decimal = {
+      value: total.value - committed.value,
+      scale: Math.max(total.scale, committed.scale)
+    };
+
+    if (available.value <= 0n) continue;
+
+    result.push({
+      id: lot.id,
+      marketId: lot.marketId,
+      outcomeIndex: lot.outcomeIndex,
+      availableShares: formatDecimal(available)
+    });
+  }
+
+  return result;
+}
