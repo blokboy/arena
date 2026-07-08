@@ -69,6 +69,53 @@ describe("portfolio grouping logic", () => {
       "COMMITTED_SHARES_EXCEED_SHARES"
     );
   });
+
+  // Regression: a fully sold lot has its remaining `shares` zeroed out by
+  // getSellTransition (src/server/positions.ts), so the Portfolio page's
+  // settled-lots table — which runs every non-OPEN lot through
+  // groupPositions() — was throwing DIVIDE_BY_ZERO on render whenever a
+  // position had been sold to completion.
+  test("does not divide by zero when a fully sold lot's shares have been zeroed out", () => {
+    const soldLot = {
+      id: "lot-1",
+      marketId: "market-1",
+      marketQuestion: "Will it rain?",
+      outcomeIndex: 0,
+      outcomeLabel: "Yes",
+      status: "SOLD" as const,
+      stake: "0",
+      shares: "0",
+      committedShares: "0",
+      entryPrice: "0.5",
+      purchasedAt: "2026-07-06T10:00:00.000Z",
+      exitPrice: "0.6",
+      exitedAt: "2026-07-07T10:00:00.000Z"
+    };
+
+    expect(() => groupPositions([soldLot])).not.toThrow();
+    const [group] = groupPositions([soldLot]);
+    expect(group?.averageEntryPrice).toBe("0.5");
+  });
+
+  test("falls back to a plain mean of each lot's own entry price across multiple fully sold lots", () => {
+    const soldLotA = {
+      id: "lot-1",
+      marketId: "market-1",
+      marketQuestion: "Will it rain?",
+      outcomeIndex: 0,
+      outcomeLabel: "Yes",
+      status: "SOLD" as const,
+      stake: "0",
+      shares: "0",
+      committedShares: "0",
+      entryPrice: "0.4",
+      purchasedAt: "2026-07-06T10:00:00.000Z"
+    };
+    const soldLotB = { ...soldLotA, id: "lot-2", entryPrice: "0.6" };
+
+    const [group] = groupPositions([soldLotA, soldLotB]);
+    expect(group?.averageEntryPrice).toBe("0.5");
+  });
 });
 
 describe("PositionGroupRow", () => {
