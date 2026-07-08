@@ -5,11 +5,7 @@ import React from "react";
 import { LockedShareValue } from "@/components/positions/locked-share-value";
 
 type SellPanelStateKind =
-  | "no-position"
-  | "all-locked"
-  | "market-closed"
-  | "price-unavailable"
-  | "loading";
+  "no-position" | "all-locked" | "market-closed" | "price-unavailable" | "loading";
 
 type SellPanelStateProps = {
   kind: SellPanelStateKind;
@@ -60,10 +56,7 @@ export function SellPanelState({ kind, availableShares, lockedShares }: SellPane
   return (
     <div className="space-y-2">
       {[0, 1].map((index) => (
-        <div
-          key={index}
-          className="h-14 rounded-md bg-slate-50 p-3 text-sm text-slate-400"
-        >
+        <div key={index} className="h-14 rounded-md bg-slate-50 p-3 text-sm text-slate-400">
           Loading position data
         </div>
       ))}

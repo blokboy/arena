@@ -5,7 +5,9 @@ import {
   calculateBuyQuote,
   calculateSellValue,
   getAvailableShares,
-  groupPositions
+  groupPositions,
+  selectEligiblePositionsForCommit,
+  type PositionLot
 } from "../../src/domain/positions";
 import { createMemoryMarketCacheRepository } from "../../src/server/markets";
 import {
@@ -502,5 +504,62 @@ describe("sell operation", () => {
         stake: "32"
       })
     ]);
+  });
+});
+
+// New for Issue #8's EligiblePositionCommitSelector: the market/outcome +
+// availability filtering the PRD assigns to FirstLegStep, kept as a pure
+// function so the commit selector component stays dumb (receives an
+// already-filtered list) and this filtering logic is unit-testable without
+// a DOM.
+describe("selectEligiblePositionsForCommit", () => {
+  const lot = (overrides: Partial<PositionLot>): PositionLot => ({
+    id: "lot-1",
+    marketId: "market-1",
+    marketQuestion: "Will it rain?",
+    outcomeIndex: 0,
+    outcomeLabel: "Yes",
+    status: "OPEN",
+    stake: "100",
+    shares: "200",
+    committedShares: "0",
+    entryPrice: "0.5",
+    purchasedAt: "2026-07-06T10:00:00.000Z",
+    ...overrides
+  });
+
+  it("keeps only OPEN lots matching the selected market and outcome", () => {
+    const lots = [
+      lot({ id: "match" }),
+      lot({ id: "wrong-outcome", outcomeIndex: 1 }),
+      lot({ id: "wrong-market", marketId: "market-2" }),
+      lot({ id: "settled", status: "SOLD" })
+    ];
+
+    const eligible = selectEligiblePositionsForCommit(lots, {
+      marketId: "market-1",
+      outcomeIndex: 0
+    });
+
+    expect(eligible.map((l) => l.id)).toEqual(["match"]);
+  });
+
+  it("excludes lots with zero available shares (fully committed already)", () => {
+    const lots = [lot({ id: "fully-committed", shares: "100", committedShares: "100" })];
+
+    expect(
+      selectEligiblePositionsForCommit(lots, { marketId: "market-1", outcomeIndex: 0 })
+    ).toEqual([]);
+  });
+
+  it("keeps a lot that is partially committed but still has shares available", () => {
+    const lots = [lot({ id: "partial", shares: "100", committedShares: "40" })];
+
+    const eligible = selectEligiblePositionsForCommit(lots, {
+      marketId: "market-1",
+      outcomeIndex: 0
+    });
+
+    expect(eligible.map((l) => l.id)).toEqual(["partial"]);
   });
 });

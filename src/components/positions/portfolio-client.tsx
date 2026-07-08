@@ -130,9 +130,7 @@ export function PortfolioClient({ stipendGrantedToday }: PortfolioClientProps) {
   // disappear from the portfolio. groupWithSellValues already tolerates a
   // null bestBid per group (falls back to no currentSellValue).
   const rawOpenLots = positions.filter((lot) => lot.status === "OPEN");
-  const rawSettledLots = positions.filter(
-    (lot) => lot.status !== "OPEN"
-  );
+  const rawSettledLots = positions.filter((lot) => lot.status !== "OPEN");
 
   const openLotData: PositionLotView[] = rawOpenLots.map((lot) => ({
     ...lot,
@@ -244,7 +242,10 @@ export function PortfolioClient({ stipendGrantedToday }: PortfolioClientProps) {
           <h2 className="text-lg font-semibold text-slate-950">Open positions</h2>
           <div className="mt-3 space-y-3">
             {[0, 1].map((i) => (
-              <div key={i} className="h-20 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-400">
+              <div
+                key={i}
+                className="h-20 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-400"
+              >
                 Loading positions
               </div>
             ))}

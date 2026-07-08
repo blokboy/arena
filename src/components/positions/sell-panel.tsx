@@ -173,10 +173,13 @@ export function MarketSellPanel({
   const allLockedShares = group.committedShares;
   const hasAvailableShares = allAvailableShares !== "0";
   const hasLockedShares = allLockedShares !== "0";
-  const stalenessMessage = priceLastSyncedAt ? computeStalenessMessage(priceLastSyncedAt, nowMs) : null;
-  const currentSellValue = bestBid && hasAvailableShares
-    ? calculateSellValue({ shares: allAvailableShares, bestBid })
+  const stalenessMessage = priceLastSyncedAt
+    ? computeStalenessMessage(priceLastSyncedAt, nowMs)
     : null;
+  const currentSellValue =
+    bestBid && hasAvailableShares
+      ? calculateSellValue({ shares: allAvailableShares, bestBid })
+      : null;
 
   if (!hasAvailableShares && hasLockedShares) {
     return (
@@ -278,9 +281,7 @@ export function MarketSellPanel({
                     setSellFeedbackState("success");
                     setSellFeedbackSoldShares(available);
                     if (bestBid) {
-                      setSellFeedbackCredited(
-                        calculateSellValue({ shares: available, bestBid })
-                      );
+                      setSellFeedbackCredited(calculateSellValue({ shares: available, bestBid }));
                     }
                   } catch {
                     setSellFeedbackState("error");
@@ -350,7 +351,8 @@ function groupKey(group: { marketId: string; outcomeIndex: number; status: strin
 function computeStalenessMessage(lastSyncedAt: string, nowMs: number): string | null {
   const ageMs = nowMs - new Date(lastSyncedAt).getTime();
   if (ageMs <= STALE_THRESHOLD_MS) return null;
-  if (ageMs >= ONE_HOUR_MS) return "Prices synced over an hour ago — the live price may have moved.";
+  if (ageMs >= ONE_HOUR_MS)
+    return "Prices synced over an hour ago — the live price may have moved.";
   const minutes = Math.max(1, Math.floor(ageMs / 60_000));
   return `Prices synced ${minutes}m ago — the live price may have moved.`;
 }

@@ -17,6 +17,7 @@ export type UserRepository = {
   findById(id: string): Promise<StoredUser | undefined>;
   markStartingBalanceBannerSeen(id: string): Promise<StoredUser | undefined>;
   updateBalance(id: string, balance: number): Promise<StoredUser | undefined>;
+  searchByUsername(query: string): Promise<Array<{ id: string; username: string }>>;
   clear(): Promise<void>;
 };
 
@@ -41,14 +42,14 @@ export function createMemoryUserRepository(
 
   return {
     async createUser(input) {
-        const user = {
-          id: `user_${state.nextId++}`,
-          username: input.username,
-          passwordHash: input.passwordHash,
-          balance: STARTING_BALANCE,
-          hasSeenStartingBalanceBanner: false,
-          stipendGrantedToday: false
-        };
+      const user = {
+        id: `user_${state.nextId++}`,
+        username: input.username,
+        passwordHash: input.passwordHash,
+        balance: STARTING_BALANCE,
+        hasSeenStartingBalanceBanner: false,
+        stipendGrantedToday: false
+      };
       users.set(user.username, user);
       ids.set(user.id, user);
       return user;
@@ -77,6 +78,16 @@ export function createMemoryUserRepository(
       user.balance = balance;
       return user;
     },
+    async searchByUsername(query) {
+      const lower = query.toLowerCase();
+      const matches: Array<{ id: string; username: string }> = [];
+      for (const user of users.values()) {
+        if (user.username.toLowerCase().includes(lower)) {
+          matches.push({ id: user.id, username: user.username });
+        }
+      }
+      return matches;
+    },
     async clear() {
       users.clear();
       ids.clear();
@@ -103,7 +114,7 @@ function toStoredUser(row: {
     passwordHash: row.passwordHash,
     balance: row.balance.toNumber(),
     hasSeenStartingBalanceBanner: row.signupBannerAt !== null,
-    stipendGrantedToday: row.stipendGrantedToday ?? ((row.stipendGrants?.length ?? 0) > 0)
+    stipendGrantedToday: row.stipendGrantedToday ?? (row.stipendGrants?.length ?? 0) > 0
   };
 }
 
@@ -158,6 +169,14 @@ export function createPrismaUserRepository(): UserRepository {
         return undefined;
       }
     },
+    async searchByUsername(query) {
+      const rows = await prisma.user.findMany({
+        where: { username: { contains: query, mode: "insensitive" } },
+        select: { id: true, username: true },
+        take: 20
+      });
+      return rows.map((row) => ({ id: row.id, username: row.username }));
+    },
     async clear() {
       await prisma.bankruptcyStipendGrant.deleteMany();
       await prisma.user.deleteMany();
@@ -170,9 +189,8 @@ const globalMemory = globalThis as typeof globalThis & {
   __arenaUserRepository?: UserRepository;
 };
 
-export const userRepository = (globalMemory.__arenaUserRepository ??=
-  shouldUseRealDatabase()
-    ? createPrismaUserRepository()
-    : createMemoryUserRepository(
-        (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
-      ));
+export const userRepository = (globalMemory.__arenaUserRepository ??= shouldUseRealDatabase()
+  ? createPrismaUserRepository()
+  : createMemoryUserRepository(
+      (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
+    ));

@@ -26,7 +26,6 @@ async function seedCachedPoliticsEvent(marketOverrides: { bestAsk?: string | nul
 // before that global hook (Vitest runs the more specific/inner hook first)
 // and violate the Position -> CachedMarket foreign key.
 describe("position buy transaction", () => {
-
   test("a successful buy debits the balance and creates the lot in one operation", async () => {
     await seedCachedPoliticsEvent();
     const user = await userRepository.createUser({ username: "mira", passwordHash: "hashed" });

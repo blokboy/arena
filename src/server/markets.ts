@@ -312,8 +312,7 @@ export async function syncAllMarketCategories(input: {
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message === "GAMMA_RATE_LIMITED" ||
-          error.message === "GAMMA_REMOTE_RATE_LIMITED")
+        (error.message === "GAMMA_RATE_LIMITED" || error.message === "GAMMA_REMOTE_RATE_LIMITED")
       ) {
         continue;
       }

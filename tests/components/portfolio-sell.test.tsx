@@ -555,9 +555,13 @@ describe("StipendNotice", () => {
 
     expect(screen.getByText("Bankruptcy stipend received")).toBeInTheDocument();
     expect(
-      screen.getByText(/The daily UTC stipend added \+200 points because your balance was at or below 0\./)
+      screen.getByText(
+        /The daily UTC stipend added \+200 points because your balance was at or below 0\./
+      )
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Dismiss bankruptcy stipend notice" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Dismiss bankruptcy stipend notice" })
+    ).toBeInTheDocument();
   });
 
   test("does not render when not granted", () => {

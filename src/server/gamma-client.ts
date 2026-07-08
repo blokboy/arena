@@ -78,8 +78,7 @@ function takeGammaToken(nowMs: number): boolean {
 
 function cronRetryDelayMs(attempt: number): number {
   return (
-    CRON_BACKOFF_BASE_MS * 2 ** attempt +
-    Math.floor(configuredRandom() * CRON_BACKOFF_JITTER_MS)
+    CRON_BACKOFF_BASE_MS * 2 ** attempt + Math.floor(configuredRandom() * CRON_BACKOFF_JITTER_MS)
   );
 }
 
@@ -160,9 +159,7 @@ export function gammaRateLimiterSnapshotForTesting(): { tokens: number } {
   return { tokens: state.tokens };
 }
 
-export function setGammaSleepForTesting(
-  sleep: (ms: number) => Promise<void> | void
-): void {
+export function setGammaSleepForTesting(sleep: (ms: number) => Promise<void> | void): void {
   configuredSleep = async (ms) => {
     await sleep(ms);
   };

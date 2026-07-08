@@ -180,7 +180,8 @@ export async function refreshOpenPositionMarkets(input: {
   refreshedMarkets: Awaited<ReturnType<typeof marketCacheRepository.findMarketByGammaId>>[];
   skippedMarketIds: string[];
 }> {
-  const refreshedMarkets: Awaited<ReturnType<typeof marketCacheRepository.findMarketByGammaId>>[] = [];
+  const refreshedMarkets: Awaited<ReturnType<typeof marketCacheRepository.findMarketByGammaId>>[] =
+    [];
   const skippedMarketIds: string[] = [];
 
   for (const marketId of input.marketIds) {
@@ -214,10 +215,7 @@ export async function refreshOpenPositionMarkets(input: {
   return { refreshedMarkets, skippedMarketIds };
 }
 
-export async function runSettlementSweep(input: {
-  now: Date;
-  gammaClient?: GammaClient;
-}): Promise<{
+export async function runSettlementSweep(input: { now: Date; gammaClient?: GammaClient }): Promise<{
   marketIds: string[];
   skippedMarketIds: string[];
   settledPositions: number;
@@ -274,9 +272,7 @@ export async function runSettlementSweep(input: {
   return { marketIds, skippedMarketIds, settledPositions };
 }
 
-export async function grantDailyBankruptcyStipends(input: {
-  now: Date;
-}): Promise<{
+export async function grantDailyBankruptcyStipends(input: { now: Date }): Promise<{
   dayKey: string;
   grantedUserIds: string[];
 }> {

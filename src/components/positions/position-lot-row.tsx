@@ -31,7 +31,13 @@ type PositionLotRowProps = {
   sellDisabled?: boolean;
 };
 
-export function PositionLotRow({ lot, showSellAction, onSell, sellLabel, sellDisabled }: PositionLotRowProps) {
+export function PositionLotRow({
+  lot,
+  showSellAction,
+  onSell,
+  sellLabel,
+  sellDisabled
+}: PositionLotRowProps) {
   const availableShares = getAvailableShares(lot);
   const hasAvailable = availableShares !== "0";
 
@@ -40,13 +46,9 @@ export function PositionLotRow({ lot, showSellAction, onSell, sellLabel, sellDis
       <div className="text-sm text-slate-600">
         <span className="font-medium text-slate-900">{formatDate(lot.purchasedAt)}</span>
         <span className="mx-1">·</span>
-        <span>
-          Entry {lot.entryPrice}
-        </span>
+        <span>Entry {lot.entryPrice}</span>
         <span className="mx-1">·</span>
-        <span>
-          {lot.shares} shares
-        </span>
+        <span>{lot.shares} shares</span>
         {lot.committedShares !== "0" ? (
           <>
             <span className="mx-1">·</span>
@@ -57,9 +59,7 @@ export function PositionLotRow({ lot, showSellAction, onSell, sellLabel, sellDis
           </>
         ) : null}
         <span className="mx-1">·</span>
-        <span>
-          {availableShares} available
-        </span>
+        <span>{availableShares} available</span>
         {lot.exitPrice ? (
           <>
             <span className="mx-1">·</span>
@@ -75,13 +75,15 @@ export function PositionLotRow({ lot, showSellAction, onSell, sellLabel, sellDis
         {lot.status !== "OPEN" ? (
           <>
             <span className="mx-1">·</span>
-            <span className={cn(
-              "inline-flex items-center gap-0.5 font-medium",
-              lot.status === "WON" && "text-emerald-600",
-              lot.status === "LOST" && "text-red-600",
-              lot.status === "VOIDED" && "text-slate-500",
-              lot.status === "SOLD" && "text-slate-500"
-            )}>
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 font-medium",
+                lot.status === "WON" && "text-emerald-600",
+                lot.status === "LOST" && "text-red-600",
+                lot.status === "VOIDED" && "text-slate-500",
+                lot.status === "SOLD" && "text-slate-500"
+              )}
+            >
               {lot.status === "WON" ? (
                 <>
                   <Check className="h-3 w-3" aria-hidden="true" /> Won

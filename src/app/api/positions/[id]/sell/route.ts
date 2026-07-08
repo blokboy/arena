@@ -4,10 +4,7 @@ import { SELL_ERROR_STATUSES } from "@/app/api/positions/sell-error-statuses";
 import { currentUserFromHeaders } from "@/server/current-user";
 import { sellPositionLot } from "@/server/positions";
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await currentUserFromHeaders(request.headers);
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });

@@ -4,15 +4,15 @@ Issue: `#7` - `Show leaderboard with active-user MEAN`
 
 Scope: frontend implementation for the leaderboard page in `blokboy/arena`, based on:
 
-- PRD: [`docs/prds/points-prediction-market.md`](/Users/tarenitup/Desktop/Test/arena/docs/prds/points-prediction-market.md)
-- Wireframes: [`docs/design/points-prediction-market-wireframes.md`](/Users/tarenitup/Desktop/Test/arena/docs/design/points-prediction-market-wireframes.md)
-- Domain terminology: [`CONTEXT.md`](/Users/tarenitup/Desktop/Test/arena/CONTEXT.md)
+- PRD: [`docs/prds/points-prediction-market.md`](../prds/points-prediction-market.md)
+- Wireframes: [`docs/design/points-prediction-market-wireframes.md`](points-prediction-market-wireframes.md)
+- Domain terminology: [`CONTEXT.md`](../../CONTEXT.md)
 - Issue: GitHub issue `#7`
 
 This handoff is focused on the leaderboard page only. It does not redefine backend behavior. The backend/domain shape already exists in:
 
-- [`src/domain/leaderboard.ts`](/Users/tarenitup/Desktop/Test/arena/src/domain/leaderboard.ts)
-- [`tests/unit/leaderboard.test.ts`](/Users/tarenitup/Desktop/Test/arena/tests/unit/leaderboard.test.ts)
+- [`src/domain/leaderboard.ts`](../../src/domain/leaderboard.ts)
+- [`tests/unit/leaderboard.test.ts`](../../tests/unit/leaderboard.test.ts)
 
 ## Product requirements
 
@@ -32,7 +32,7 @@ The frontend engineer should implement this page as a small composition of page,
 
 ### 1. `LeaderboardPage`
 
-Location: [`src/app/(app)/leaderboard/page.tsx`](/Users/tarenitup/Desktop/Test/arena/src/app/%28app%29/leaderboard/page.tsx)
+Location: `src/app/(app)/leaderboard/page.tsx`
 
 Responsibilities:
 
@@ -281,9 +281,9 @@ Frontend responsibility:
 
 ## Implementation notes
 
-- The current leaderboard page is still a stub in [`src/app/(app)/leaderboard/page.tsx`](/Users/tarenitup/Desktop/Test/arena/src/app/%28app%29/leaderboard/page.tsx).
-- The domain helper already computes active-user MEAN correctly in [`src/domain/leaderboard.ts`](/Users/tarenitup/Desktop/Test/arena/src/domain/leaderboard.ts).
-- Tests already cover the active-user mean behavior in [`tests/unit/leaderboard.test.ts`](/Users/tarenitup/Desktop/Test/arena/tests/unit/leaderboard.test.ts).
+- The current leaderboard page is still a stub in `src/app/(app)/leaderboard/page.tsx`.
+- The domain helper already computes active-user MEAN correctly in [`src/domain/leaderboard.ts`](../../src/domain/leaderboard.ts).
+- Tests already cover the active-user mean behavior in [`tests/unit/leaderboard.test.ts`](../../tests/unit/leaderboard.test.ts).
 
 Recommended frontend sequence:
 

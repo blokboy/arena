@@ -260,9 +260,7 @@ export function createPrismaPositionRepository(): PositionRepository {
 // StoredPositionLot.marketId is the domain-facing Gamma market id
 // (CachedMarket.gammaId) everywhere else in the app — resolve the join once
 // here so callers never see the internal FK.
-async function toStoredLotWithGammaMarketId(
-  row: PrismaPositionRow
-): Promise<StoredPositionLot> {
+async function toStoredLotWithGammaMarketId(row: PrismaPositionRow): Promise<StoredPositionLot> {
   const market = await prisma.cachedMarket.findUnique({
     where: { id: row.marketId },
     select: { gammaId: true }
@@ -482,11 +480,12 @@ export async function listPositionLots(input: {
 
   const lots = await positions.listLotsByUserId(input.userId);
   const filteredLots =
-    input.marketId === undefined
-      ? lots
-      : lots.filter((lot) => lot.marketId === input.marketId);
+    input.marketId === undefined ? lots : lots.filter((lot) => lot.marketId === input.marketId);
 
-  const markets = new Map<string, Awaited<ReturnType<MarketCacheRepository["findMarketByGammaId"]>>>();
+  const markets = new Map<
+    string,
+    Awaited<ReturnType<MarketCacheRepository["findMarketByGammaId"]>>
+  >();
   for (const marketId of new Set(filteredLots.map((lot) => lot.marketId))) {
     const cached = await marketCache.findMarketByGammaId(marketId);
     if (!cached) {

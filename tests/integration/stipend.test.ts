@@ -7,8 +7,14 @@ import { userRepository } from "@/server/users";
 describe("bankruptcy stipend job", () => {
   test("grants +200 once per UTC day to users at or below zero", async () => {
     const zero = await userRepository.createUser({ username: "zero", passwordHash: "hashed" });
-    const negative = await userRepository.createUser({ username: "negative", passwordHash: "hashed" });
-    const positive = await userRepository.createUser({ username: "positive", passwordHash: "hashed" });
+    const negative = await userRepository.createUser({
+      username: "negative",
+      passwordHash: "hashed"
+    });
+    const positive = await userRepository.createUser({
+      username: "positive",
+      passwordHash: "hashed"
+    });
 
     await prisma.user.update({ where: { id: zero.id }, data: { balance: 0 } });
     await prisma.user.update({ where: { id: negative.id }, data: { balance: -10 } });

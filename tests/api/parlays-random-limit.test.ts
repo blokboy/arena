@@ -89,7 +89,10 @@ describe("GET /api/parlays/random — limit handling", () => {
   test.each(["abc", "0", "-1", "2.5", ""])(
     "rejects an invalid limit (%s) with INVALID_LIMIT",
     async (limit) => {
-      const viewer = await userRepository.createUser({ username: "viewer", passwordHash: "hashed" });
+      const viewer = await userRepository.createUser({
+        username: "viewer",
+        passwordHash: "hashed"
+      });
 
       const response = await getRandomParlays(requestWithLimit(viewer.id, limit));
 

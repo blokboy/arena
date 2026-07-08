@@ -33,7 +33,8 @@ export function SellFeedback({ state, soldShares, creditedPoints, errorCode }: S
         className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
       >
         <p>
-          Sold {soldShares} available shares for {creditedPoints ? formatPoints(Number(creditedPoints)) : "0"} pts.
+          Sold {soldShares} available shares for{" "}
+          {creditedPoints ? formatPoints(Number(creditedPoints)) : "0"} pts.
         </p>
       </div>
     );
