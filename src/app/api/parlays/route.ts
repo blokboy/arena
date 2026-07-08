@@ -56,11 +56,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ parlay }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "INVITEE_NOT_FOUND") {
-        return NextResponse.json({ error: { code: "INVITEE_NOT_FOUND" } }, { status: 404 });
-      }
-      return NextResponse.json({ error: { code: error.message } }, { status: 500 });
+    if (error instanceof Error && error.message === "INVITEE_NOT_FOUND") {
+      return NextResponse.json({ error: { code: "INVITEE_NOT_FOUND" } }, { status: 404 });
     }
     throw error;
   }
