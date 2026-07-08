@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { POST as runSettlement } from "@/app/api/cron/settlement/route";
-import { POST as runStipend } from "@/app/api/cron/stipend/route";
+import { GET as runSettlement } from "@/app/api/cron/settlement/route";
+import { GET as runStipend } from "@/app/api/cron/stipend/route";
 import { normalizeGammaEvent, type GammaMarket } from "@/domain/markets";
 import { prisma } from "@/server/db";
 import { marketCacheRepository, setMarketGammaClientForTesting } from "@/server/markets";
@@ -27,8 +27,8 @@ describe("settlement and stipend cron APIs", () => {
   test("reject settlement and stipend requests without the cron bearer secret", async () => {
     process.env.CRON_SECRET = "cron-secret";
 
-    const settlement = await runSettlement(new Request("http://arena.test/api/cron/settlement", { method: "POST" }));
-    const stipend = await runStipend(new Request("http://arena.test/api/cron/stipend", { method: "POST" }));
+    const settlement = await runSettlement(new Request("http://arena.test/api/cron/settlement", { method: "GET" }));
+    const stipend = await runStipend(new Request("http://arena.test/api/cron/stipend", { method: "GET" }));
 
     expect(settlement.status).toBe(401);
     await expect(settlement.json()).resolves.toEqual({ error: { code: "UNAUTHORIZED_CRON" } });
@@ -54,7 +54,7 @@ describe("settlement and stipend cron APIs", () => {
 
     const response = await runSettlement(
       new Request("http://arena.test/api/cron/settlement", {
-        method: "POST",
+        method: "GET",
         headers: { authorization: "Bearer cron-secret" }
       })
     );
@@ -75,7 +75,7 @@ describe("settlement and stipend cron APIs", () => {
 
     const response = await runStipend(
       new Request("http://arena.test/api/cron/stipend", {
-        method: "POST",
+        method: "GET",
         headers: { authorization: "Bearer cron-secret" }
       })
     );
