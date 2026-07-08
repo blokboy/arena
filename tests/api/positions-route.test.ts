@@ -7,10 +7,10 @@ import { userRepository } from "@/server/users";
 import { jsonRequest } from "@test/helpers/api";
 import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
 
-function seedCachedMarket(marketOverrides: Partial<GammaMarket> = {}) {
+async function seedCachedMarket(marketOverrides: Partial<GammaMarket> = {}) {
   const event = binaryGammaEvent();
   event.markets = [{ ...event.markets?.[0], ...marketOverrides }];
-  marketCacheRepository.upsertCategoryEvents({
+  await marketCacheRepository.upsertCategoryEvents({
     category: "Politics",
     events: [
       normalizeGammaEvent(event, {
@@ -35,7 +35,7 @@ function buyRequest(body: unknown, userId?: string) {
 
 describe("POST /api/positions", () => {
   test("rejects anonymous callers", async () => {
-    seedCachedMarket();
+    await seedCachedMarket();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "250" })
@@ -46,8 +46,8 @@ describe("POST /api/positions", () => {
   });
 
   test("buys at bestAsk, returns the created lot and the debited balance", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "250" }, user.id)
@@ -56,7 +56,7 @@ describe("POST /api/positions", () => {
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({
       position: {
-        id: "lot_1",
+        id: expect.any(String),
         userId: user.id,
         marketId: "market-democrat-win-2028",
         marketQuestion: "Will a Democrat win the 2028 US presidential election?",
@@ -71,12 +71,12 @@ describe("POST /api/positions", () => {
       },
       balance: 750
     });
-    expect(userRepository.findById(user.id)?.balance).toBe(750);
+    expect((await userRepository.findById(user.id))?.balance).toBe(750);
   });
 
   test("repeat buys return separate lots and keep debiting", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const first = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "100" }, user.id)
@@ -95,8 +95,8 @@ describe("POST /api/positions", () => {
   });
 
   test("rejects unparseable and malformed bodies", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const unparseable = await buyPosition(
       new Request("http://arena.test/api/positions", {
@@ -125,8 +125,8 @@ describe("POST /api/positions", () => {
   });
 
   test("rejects invalid outcomes with INVALID_OUTCOME", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     for (const outcomeIndex of ["0", undefined, 2, -1, 0.5]) {
       const response = await buyPosition(
@@ -138,8 +138,8 @@ describe("POST /api/positions", () => {
   });
 
   test("rejects malformed stakes with INVALID_STAKE", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     for (const stake of [250, undefined, "abc", "-5", "0", "1.234"]) {
       const response = await buyPosition(
@@ -148,12 +148,12 @@ describe("POST /api/positions", () => {
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_STAKE" } });
     }
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
   });
 
   test("rejects unknown markets with MARKET_NOT_FOUND and debits nothing", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-unknown", outcomeIndex: 0, stake: "250" }, user.id)
@@ -161,12 +161,12 @@ describe("POST /api/positions", () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: { code: "MARKET_NOT_FOUND" } });
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
   });
 
   test("rejects closed markets with MARKET_CLOSED and debits nothing", async () => {
-    seedCachedMarket({ closed: true });
-    const user = seedUser();
+    await seedCachedMarket({ closed: true });
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "250" }, user.id)
@@ -174,12 +174,12 @@ describe("POST /api/positions", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: { code: "MARKET_CLOSED" } });
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
   });
 
   test("rejects inactive markets with MARKET_INACTIVE and debits nothing", async () => {
-    seedCachedMarket({ active: false });
-    const user = seedUser();
+    await seedCachedMarket({ active: false });
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "250" }, user.id)
@@ -187,7 +187,7 @@ describe("POST /api/positions", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: { code: "MARKET_INACTIVE" } });
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
   });
 
   test.each([
@@ -196,8 +196,8 @@ describe("POST /api/positions", () => {
   ])(
     "rejects markets with a %s bestAsk with PRICE_UNAVAILABLE and debits nothing",
     async (_label, bestAsk) => {
-      seedCachedMarket({ bestAsk });
-      const user = seedUser();
+      await seedCachedMarket({ bestAsk });
+      const user = await seedUser();
 
       const response = await buyPosition(
         buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "250" }, user.id)
@@ -205,13 +205,13 @@ describe("POST /api/positions", () => {
 
       expect(response.status).toBe(409);
       await expect(response.json()).resolves.toEqual({ error: { code: "PRICE_UNAVAILABLE" } });
-      expect(userRepository.findById(user.id)?.balance).toBe(1000);
+      expect((await userRepository.findById(user.id))?.balance).toBe(1000);
     }
   );
 
   test("rejects stakes over the balance with INSUFFICIENT_BALANCE and debits nothing", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest(
@@ -222,18 +222,18 @@ describe("POST /api/positions", () => {
 
     expect(response.status).toBe(422);
     await expect(response.json()).resolves.toEqual({ error: { code: "INSUFFICIENT_BALANCE" } });
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
   });
 
   test("allows staking the entire balance down to exactly zero", async () => {
-    seedCachedMarket();
-    const user = seedUser();
+    await seedCachedMarket();
+    const user = await seedUser();
 
     const response = await buyPosition(
       buyRequest({ marketId: "market-democrat-win-2028", outcomeIndex: 0, stake: "1000" }, user.id)
     );
 
     expect(response.status).toBe(201);
-    expect(userRepository.findById(user.id)?.balance).toBe(0);
+    expect((await userRepository.findById(user.id))?.balance).toBe(0);
   });
 });

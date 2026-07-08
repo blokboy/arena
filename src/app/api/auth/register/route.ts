@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authError, hashPassword, validateSignup } from "@/domain/auth";
-import { createSession, SESSION_COOKIE_NAME } from "@/server/sessions";
+import { createSessionToken, SESSION_COOKIE_NAME } from "@/server/sessions";
 import { userRepository } from "@/server/users";
 
 export async function POST(request: Request) {
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validation }, { status: 400 });
   }
 
-  if (userRepository.findByUsername(validation.username)) {
+  if (await userRepository.findByUsername(validation.username)) {
     if (isFormSubmission) {
       return redirectTo(request, "/signup?error=USERNAME_TAKEN");
     }
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(body.password ?? "");
-  const user = userRepository.createUser({ username: validation.username, passwordHash });
+  const user = await userRepository.createUser({ username: validation.username, passwordHash });
 
   const response = isFormSubmission
     ? redirectTo(request, "/markets")
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         { status: 201 }
       );
 
-  response.cookies.set(SESSION_COOKIE_NAME, createSession(user.id), {
+  response.cookies.set(SESSION_COOKIE_NAME, await createSessionToken(user.id), {
     httpOnly: true,
     sameSite: "lax",
     path: "/"

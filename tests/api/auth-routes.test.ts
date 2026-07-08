@@ -23,7 +23,7 @@ describe("auth API", () => {
       user: { username: "casey", balance: 1000 }
     });
 
-    const stored = userRepository.findByUsername("casey");
+    const stored = await userRepository.findByUsername("casey");
     expect(stored?.passwordHash).not.toBe("long-enough");
     await expect(verifyPassword("long-enough", stored?.passwordHash ?? "")).resolves.toBe(true);
   });

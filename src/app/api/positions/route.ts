@@ -14,7 +14,7 @@ const BUY_ERROR_STATUSES: Record<string, number> = {
 };
 
 export async function POST(request: Request) {
-  const user = currentUserFromHeaders(request.headers);
+  const user = await currentUserFromHeaders(request.headers);
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
   }
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { lot, balance } = buyPositionLot({
+    const { lot, balance } = await buyPositionLot({
       user,
       marketId,
       outcomeIndex,

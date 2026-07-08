@@ -19,8 +19,20 @@ describe("market sync cron API", () => {
 
   test("syncs every curated market category with Vercel's CRON_SECRET authorization header", async () => {
     process.env.CRON_SECRET = "cron-secret";
+    // Each category gets its own distinct event/market gammaId — a real
+    // Gamma event belongs to exactly one of our curated categories
+    // (CachedEvent.category is a scalar column, not a multi-category set),
+    // so reusing one fixture's gammaId across all 9 calls would just
+    // overwrite the same row's category 9 times instead of producing 9
+    // independently-cached events.
     const gammaClient = {
-      fetchEventsByTag: vi.fn().mockResolvedValue([binaryGammaEvent()])
+      fetchEventsByTag: vi.fn().mockImplementation((tagId: number) => {
+        const event = binaryGammaEvent();
+        event.id = `event-tag-${tagId}`;
+        event.markets = [{ ...event.markets?.[0], id: `market-tag-${tagId}` }];
+        return Promise.resolve([event]);
+      }),
+      fetchMarketById: vi.fn()
     };
     setMarketGammaClientForTesting(gammaClient);
 
@@ -37,7 +49,7 @@ describe("market sync cron API", () => {
     });
     expect(gammaClient.fetchEventsByTag).toHaveBeenCalledTimes(MARKET_CATEGORIES.length);
     for (const category of MARKET_CATEGORIES) {
-      expect(marketCacheRepository.listEventsByCategory(category)).toHaveLength(1);
+      expect(await marketCacheRepository.listEventsByCategory(category)).toHaveLength(1);
     }
   });
 });

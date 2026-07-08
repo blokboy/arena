@@ -1,4 +1,5 @@
 import { STARTING_BALANCE } from "@/lib/money";
+import { prisma, shouldUseRealDatabase } from "@/server/db";
 
 export type StoredUser = {
   id: string;
@@ -9,12 +10,12 @@ export type StoredUser = {
 };
 
 export type UserRepository = {
-  createUser(input: { username: string; passwordHash: string }): StoredUser;
-  findByUsername(username: string): StoredUser | undefined;
-  findById(id: string): StoredUser | undefined;
-  markStartingBalanceBannerSeen(id: string): StoredUser | undefined;
-  updateBalance(id: string, balance: number): StoredUser | undefined;
-  clear(): void;
+  createUser(input: { username: string; passwordHash: string }): Promise<StoredUser>;
+  findByUsername(username: string): Promise<StoredUser | undefined>;
+  findById(id: string): Promise<StoredUser | undefined>;
+  markStartingBalanceBannerSeen(id: string): Promise<StoredUser | undefined>;
+  updateBalance(id: string, balance: number): Promise<StoredUser | undefined>;
+  clear(): Promise<void>;
 };
 
 type MemoryUserRepositoryState = {
@@ -37,7 +38,7 @@ export function createMemoryUserRepository(
   const { users, ids } = state;
 
   return {
-    createUser(input) {
+    async createUser(input) {
       const user = {
         id: `user_${state.nextId++}`,
         username: input.username,
@@ -49,13 +50,13 @@ export function createMemoryUserRepository(
       ids.set(user.id, user);
       return user;
     },
-    findByUsername(username) {
+    async findByUsername(username) {
       return users.get(username);
     },
-    findById(id) {
+    async findById(id) {
       return ids.get(id);
     },
-    markStartingBalanceBannerSeen(id) {
+    async markStartingBalanceBannerSeen(id) {
       const user = ids.get(id);
       if (!user) {
         return undefined;
@@ -64,7 +65,7 @@ export function createMemoryUserRepository(
       user.hasSeenStartingBalanceBanner = true;
       return user;
     },
-    updateBalance(id, balance) {
+    async updateBalance(id, balance) {
       const user = ids.get(id);
       if (!user) {
         return undefined;
@@ -73,7 +74,7 @@ export function createMemoryUserRepository(
       user.balance = balance;
       return user;
     },
-    clear() {
+    async clear() {
       users.clear();
       ids.clear();
       state.nextId = 1;
@@ -81,10 +82,74 @@ export function createMemoryUserRepository(
   };
 }
 
+// `signupBannerAt` (nullable timestamp) is the persisted column; the
+// repository interface exposes it as a plain boolean since callers only ever
+// care whether the banner has been seen, never when.
+function toStoredUser(row: {
+  id: string;
+  username: string;
+  passwordHash: string;
+  balance: { toNumber(): number };
+  signupBannerAt: Date | null;
+}): StoredUser {
+  return {
+    id: row.id,
+    username: row.username,
+    passwordHash: row.passwordHash,
+    balance: row.balance.toNumber(),
+    hasSeenStartingBalanceBanner: row.signupBannerAt !== null
+  };
+}
+
+export function createPrismaUserRepository(): UserRepository {
+  return {
+    async createUser(input) {
+      const row = await prisma.user.create({
+        data: { username: input.username, passwordHash: input.passwordHash }
+      });
+      return toStoredUser(row);
+    },
+    async findByUsername(username) {
+      const row = await prisma.user.findUnique({ where: { username } });
+      return row ? toStoredUser(row) : undefined;
+    },
+    async findById(id) {
+      const row = await prisma.user.findUnique({ where: { id } });
+      return row ? toStoredUser(row) : undefined;
+    },
+    async markStartingBalanceBannerSeen(id) {
+      try {
+        const row = await prisma.user.update({
+          where: { id },
+          data: { signupBannerAt: new Date() }
+        });
+        return toStoredUser(row);
+      } catch {
+        return undefined;
+      }
+    },
+    async updateBalance(id, balance) {
+      try {
+        const row = await prisma.user.update({ where: { id }, data: { balance } });
+        return toStoredUser(row);
+      } catch {
+        return undefined;
+      }
+    },
+    async clear() {
+      await prisma.user.deleteMany();
+    }
+  };
+}
+
 const globalMemory = globalThis as typeof globalThis & {
   __arenaUserRepositoryState?: MemoryUserRepositoryState;
+  __arenaUserRepository?: UserRepository;
 };
 
-export const userRepository = createMemoryUserRepository(
-  (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
-);
+export const userRepository = (globalMemory.__arenaUserRepository ??=
+  shouldUseRealDatabase()
+    ? createPrismaUserRepository()
+    : createMemoryUserRepository(
+        (globalMemory.__arenaUserRepositoryState ??= createMemoryUserRepositoryState())
+      ));

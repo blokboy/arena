@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { currentUserFromHeaders } from "@/server/current-user";
 
 export async function currentUserOrRedirect() {
-  const user = currentUserFromHeaders(await headers());
+  const user = await currentUserFromHeaders(await headers());
 
   if (!user) {
     redirect("/login");

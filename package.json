@@ -15,12 +15,14 @@
     "test:api": "vitest run --project api",
     "test:components": "vitest run --project components",
     "test:e2e": "playwright test",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
     "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "db:test:down": "docker compose -f docker-compose.test.yml down -v",
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:api && pnpm test:components"
   },
   "dependencies": {
-    "@auth/prisma-adapter": "^2.7.4",
+    "@auth/core": "^0.41.2",
     "@prisma/client": "^6.1.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",

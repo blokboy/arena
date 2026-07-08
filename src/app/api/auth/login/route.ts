@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authError, verifyCredentials } from "@/domain/auth";
-import { createSession, SESSION_COOKIE_NAME } from "@/server/sessions";
+import { createSessionToken, SESSION_COOKIE_NAME } from "@/server/sessions";
 import { userRepository } from "@/server/users";
 
 export async function POST(request: Request) {
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
         }
       });
 
-  response.cookies.set(SESSION_COOKIE_NAME, createSession(result.user.id), {
+  response.cookies.set(SESSION_COOKIE_NAME, await createSessionToken(result.user.id), {
     httpOnly: true,
     sameSite: "lax",
     path: "/"

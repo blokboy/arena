@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { BuyPanel } from "@/components/markets/buy-panel";
 import { currentUserOrRedirect } from "@/server/authenticated-user";
-import { marketCacheRepository } from "@/server/markets";
+import { marketCacheRepository, refreshMarketIfStale } from "@/server/markets";
 
 export default async function MarketDetailPage({
   params
@@ -13,11 +13,13 @@ export default async function MarketDetailPage({
 }) {
   const user = await currentUserOrRedirect();
   const { marketId } = await params;
-  const market = marketCacheRepository.findMarketByGammaId(marketId);
+  const cached = await marketCacheRepository.findMarketByGammaId(marketId);
 
-  if (!market) {
+  if (!cached) {
     notFound();
   }
+
+  const market = await refreshMarketIfStale({ market: cached, now: new Date() });
 
   return (
     <AppShell currentPath="/markets" user={user}>

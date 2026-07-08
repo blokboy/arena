@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { normalizeGammaEvent } from "@/domain/markets";
 import { marketCacheRepository } from "@/server/markets";
@@ -6,10 +6,10 @@ import { buyPositionLot, positionRepository } from "@/server/positions";
 import { userRepository } from "@/server/users";
 import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
 
-function seedCachedPoliticsEvent(marketOverrides: { bestAsk?: string | null } = {}) {
+async function seedCachedPoliticsEvent(marketOverrides: { bestAsk?: string | null } = {}) {
   const event = binaryGammaEvent();
   event.markets = [{ ...event.markets?.[0], ...marketOverrides }];
-  marketCacheRepository.upsertCategoryEvents({
+  await marketCacheRepository.upsertCategoryEvents({
     category: "Politics",
     events: [
       normalizeGammaEvent(event, {
@@ -20,16 +20,18 @@ function seedCachedPoliticsEvent(marketOverrides: { bestAsk?: string | null } = 
   });
 }
 
+// Cleanup is handled by test/setup/integration.ts's global afterEach, which
+// clears positions before markets (required FK order against real
+// Postgres) — a local afterEach here that only cleared markets would run
+// before that global hook (Vitest runs the more specific/inner hook first)
+// and violate the Position -> CachedMarket foreign key.
 describe("position buy transaction", () => {
-  afterEach(() => {
-    marketCacheRepository.clear();
-  });
 
-  test("a successful buy debits the balance and creates the lot in one operation", () => {
-    seedCachedPoliticsEvent();
-    const user = userRepository.createUser({ username: "mira", passwordHash: "hashed" });
+  test("a successful buy debits the balance and creates the lot in one operation", async () => {
+    await seedCachedPoliticsEvent();
+    const user = await userRepository.createUser({ username: "mira", passwordHash: "hashed" });
 
-    const result = buyPositionLot({
+    const result = await buyPositionLot({
       user,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
@@ -37,9 +39,9 @@ describe("position buy transaction", () => {
       now: new Date("2026-07-06T13:00:00.000Z")
     });
 
-    expect(userRepository.findById(user.id)?.balance).toBe(750);
+    expect((await userRepository.findById(user.id))?.balance).toBe(750);
     expect(result.balance).toBe(750);
-    expect(positionRepository.listLotsByUserId(user.id)).toEqual([
+    expect(await positionRepository.listLotsByUserId(user.id)).toEqual([
       expect.objectContaining({
         id: result.lot.id,
         userId: user.id,
@@ -53,11 +55,11 @@ describe("position buy transaction", () => {
     ]);
   });
 
-  test("a rejected buy applies neither the debit nor the lot", () => {
-    seedCachedPoliticsEvent();
-    const user = userRepository.createUser({ username: "jules", passwordHash: "hashed" });
+  test("a rejected buy applies neither the debit nor the lot", async () => {
+    await seedCachedPoliticsEvent();
+    const user = await userRepository.createUser({ username: "jules", passwordHash: "hashed" });
 
-    expect(() =>
+    await expect(
       buyPositionLot({
         user,
         marketId: "market-democrat-win-2028",
@@ -65,17 +67,17 @@ describe("position buy transaction", () => {
         stake: "1200",
         now: new Date("2026-07-06T13:00:00.000Z")
       })
-    ).toThrow("INSUFFICIENT_BALANCE");
+    ).rejects.toThrow("INSUFFICIENT_BALANCE");
 
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
-    expect(positionRepository.listLotsByUserId(user.id)).toEqual([]);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
+    expect(await positionRepository.listLotsByUserId(user.id)).toEqual([]);
   });
 
-  test("a buy with no usable price applies neither the debit nor the lot", () => {
-    seedCachedPoliticsEvent({ bestAsk: null });
-    const user = userRepository.createUser({ username: "priya", passwordHash: "hashed" });
+  test("a buy with no usable price applies neither the debit nor the lot", async () => {
+    await seedCachedPoliticsEvent({ bestAsk: null });
+    const user = await userRepository.createUser({ username: "priya", passwordHash: "hashed" });
 
-    expect(() =>
+    await expect(
       buyPositionLot({
         user,
         marketId: "market-democrat-win-2028",
@@ -83,17 +85,17 @@ describe("position buy transaction", () => {
         stake: "250",
         now: new Date("2026-07-06T13:00:00.000Z")
       })
-    ).toThrow("PRICE_UNAVAILABLE");
+    ).rejects.toThrow("PRICE_UNAVAILABLE");
 
-    expect(userRepository.findById(user.id)?.balance).toBe(1000);
-    expect(positionRepository.listLotsByUserId(user.id)).toEqual([]);
+    expect((await userRepository.findById(user.id))?.balance).toBe(1000);
+    expect(await positionRepository.listLotsByUserId(user.id)).toEqual([]);
   });
 
-  test("a failed buy after a successful one leaves the earlier debit and lot intact", () => {
-    seedCachedPoliticsEvent();
-    const user = userRepository.createUser({ username: "casey", passwordHash: "hashed" });
+  test("a failed buy after a successful one leaves the earlier debit and lot intact", async () => {
+    await seedCachedPoliticsEvent();
+    const user = await userRepository.createUser({ username: "casey", passwordHash: "hashed" });
 
-    buyPositionLot({
+    await buyPositionLot({
       user,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
@@ -101,7 +103,7 @@ describe("position buy transaction", () => {
       now: new Date("2026-07-06T13:00:00.000Z")
     });
 
-    expect(() =>
+    await expect(
       buyPositionLot({
         user,
         marketId: "market-democrat-win-2028",
@@ -109,24 +111,24 @@ describe("position buy transaction", () => {
         stake: "700",
         now: new Date("2026-07-06T13:05:00.000Z")
       })
-    ).toThrow("INSUFFICIENT_BALANCE");
+    ).rejects.toThrow("INSUFFICIENT_BALANCE");
 
-    expect(userRepository.findById(user.id)?.balance).toBe(600);
-    expect(positionRepository.listLotsByUserId(user.id)).toHaveLength(1);
+    expect((await userRepository.findById(user.id))?.balance).toBe(600);
+    expect(await positionRepository.listLotsByUserId(user.id)).toHaveLength(1);
   });
 
-  test("sequential buys accumulate debits as independent lots", () => {
-    seedCachedPoliticsEvent();
-    const user = userRepository.createUser({ username: "remy", passwordHash: "hashed" });
+  test("sequential buys accumulate debits as independent lots", async () => {
+    await seedCachedPoliticsEvent();
+    const user = await userRepository.createUser({ username: "remy", passwordHash: "hashed" });
 
-    const first = buyPositionLot({
+    const first = await buyPositionLot({
       user,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
       stake: "250",
       now: new Date("2026-07-06T13:00:00.000Z")
     });
-    const second = buyPositionLot({
+    const second = await buyPositionLot({
       user,
       marketId: "market-democrat-win-2028",
       outcomeIndex: 0,
@@ -135,10 +137,8 @@ describe("position buy transaction", () => {
     });
 
     expect(first.lot.id).not.toBe(second.lot.id);
-    expect(userRepository.findById(user.id)?.balance).toBe(500);
-    expect(positionRepository.listLotsByUserId(user.id).map((lot) => lot.id)).toEqual([
-      first.lot.id,
-      second.lot.id
-    ]);
+    expect((await userRepository.findById(user.id))?.balance).toBe(500);
+    const lots = await positionRepository.listLotsByUserId(user.id);
+    expect(lots.map((lot) => lot.id)).toEqual([first.lot.id, second.lot.id]);
   });
 });

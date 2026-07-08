@@ -67,7 +67,7 @@ describe("credential verification", () => {
     await expect(
       verifyCredentials(
         { username: "  Casey ", password: "correct-password" },
-        { findByUsername: (username) => (username === "casey" ? user : undefined) }
+        { findByUsername: async (username) => (username === "casey" ? user : undefined) }
       )
     ).resolves.toEqual({ ok: true, user });
   });
@@ -76,7 +76,7 @@ describe("credential verification", () => {
     const passwordHash = await hashPassword("correct-password");
     const user = { id: "user_1", username: "casey", passwordHash, balance: 1000 };
     const users = {
-      findByUsername: (username: string) => (username === "casey" ? user : undefined)
+      findByUsername: async (username: string) => (username === "casey" ? user : undefined)
     };
 
     await expect(

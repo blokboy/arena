@@ -1,9 +1,8 @@
+import { userIdForHeaders } from "@/server/sessions";
 import { userRepository } from "@/server/users";
-import { sessionCookieFromHeaders, userIdForSession } from "@/server/sessions";
 
-export function currentUserFromHeaders(headers: Headers) {
-  const userId =
-    headers.get("x-test-user-id") ?? userIdForSession(sessionCookieFromHeaders(headers));
+export async function currentUserFromHeaders(headers: Headers) {
+  const userId = headers.get("x-test-user-id") ?? (await userIdForHeaders(headers));
   if (!userId) {
     return undefined;
   }

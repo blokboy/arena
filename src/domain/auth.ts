@@ -29,7 +29,7 @@ export type CredentialUser = {
 };
 
 export type CredentialRepository = {
-  findByUsername(username: string): CredentialUser | undefined;
+  findByUsername(username: string): Promise<CredentialUser | undefined>;
 };
 
 export type CredentialResult =
@@ -87,7 +87,7 @@ export async function verifyCredentials(
   users: CredentialRepository
 ): Promise<CredentialResult> {
   const username = input.username.trim().toLowerCase();
-  const user = users.findByUsername(username);
+  const user = await users.findByUsername(username);
 
   if (!user) {
     return credentialError();
