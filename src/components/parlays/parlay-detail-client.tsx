@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { ActiveLegStickyMarker } from "@/components/parlays/active-leg-sticky-marker";
 import { EligiblePositionCommitSelector } from "@/components/parlays/eligible-position-commit-selector";
@@ -8,6 +8,11 @@ import { LegBackerList, type LegBackerStake } from "@/components/parlays/leg-bac
 import { LegTimeline, type LegTimelineLeg } from "@/components/parlays/leg-timeline";
 import { RolloverControl, type MemberVoteTally } from "@/components/parlays/rollover-control";
 import type { EligiblePositionLot, SelectedCommitments } from "@/components/parlays/types";
+import {
+  getAvailableShares,
+  groupPositions,
+  type PositionLot as HoldingPositionLot
+} from "@/domain/positions";
 
 type DetailStake = {
   user: { id: string; username: string };
@@ -71,6 +76,13 @@ type PositionLot = {
   status: string;
   committedShares?: string;
   purchasedAt?: string;
+};
+
+type SelectedHolding = {
+  marketId: string;
+  marketQuestion: string;
+  outcomeIndex: number;
+  outcomeLabel: string;
 };
 
 type FetchStatus = "loading" | "success" | "error";
@@ -368,68 +380,171 @@ function AppendLegSection({
   parlayId: string;
   onCommitted: () => void;
 }) {
-  const [marketId, setMarketId] = useState("");
-  const [outcomeIndex, setOutcomeIndex] = useState("0");
-  const [lots, setLots] = useState<EligiblePositionLot[]>([]);
+  const [holdingsStatus, setHoldingsStatus] = useState<"loading" | "success" | "error">("loading");
+  const [ownedLots, setOwnedLots] = useState<HoldingPositionLot[]>([]);
+  const [selectedHolding, setSelectedHolding] = useState<SelectedHolding | null>(null);
   const [selected, setSelected] = useState<SelectedCommitments>({});
   const [error, setError] = useState<{ code: string; details?: Record<string, string> } | null>(
     null
   );
   const [submitting, setSubmitting] = useState(false);
 
+  // Append must be seeded from a market/outcome the member already holds
+  // open shares in — same behavior as creating a parlay's first leg (PRD
+  // Part IV §1): fetch the member's own portfolio once and let them choose
+  // from it, rather than typing a raw market id/outcome index.
+  useEffect(() => {
+    let active = true;
+    setHoldingsStatus("loading");
+
+    fetch("/api/positions")
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("POSITIONS_REQUEST_FAILED");
+        }
+        const body = (await response.json()) as { positions?: HoldingPositionLot[] };
+        return body.positions ?? [];
+      })
+      .then((positions) => {
+        if (!active) return;
+        setOwnedLots(positions);
+        setHoldingsStatus("success");
+      })
+      .catch(() => {
+        if (!active) return;
+        setOwnedLots([]);
+        setHoldingsStatus("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const holdings = useMemo(
+    () =>
+      groupPositions(ownedLots).filter(
+        (group) => group.status === "OPEN" && Number(group.availableShares) > 0
+      ),
+    [ownedLots]
+  );
+
+  const eligibleLots = useMemo<EligiblePositionLot[]>(() => {
+    if (!selectedHolding) {
+      return [];
+    }
+
+    return ownedLots
+      .filter(
+        (lot) =>
+          lot.status === "OPEN" &&
+          lot.marketId === selectedHolding.marketId &&
+          lot.outcomeIndex === selectedHolding.outcomeIndex
+      )
+      .map((lot) => ({
+        positionId: lot.id,
+        marketId: lot.marketId,
+        marketQuestion: lot.marketQuestion,
+        outcomeIndex: lot.outcomeIndex,
+        outcomeLabel: lot.outcomeLabel,
+        entryPrice: lot.entryPrice,
+        availableShares: getAvailableShares({
+          shares: lot.shares,
+          committedShares: lot.committedShares
+        }),
+        committedShares: lot.committedShares,
+        purchasedAt: lot.purchasedAt
+      }))
+      .filter((lot) => Number(lot.availableShares) > 0);
+  }, [ownedLots, selectedHolding]);
+
+  useEffect(() => {
+    setSelected({});
+  }, [selectedHolding]);
+
   const commitments = commitmentsFromSelection(selected);
 
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4">
+    <section className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-medium text-slate-950">Append a leg</h2>
       <p className="text-xs text-slate-500">
         These shares will be locked into this parlay. If an earlier leg fails before this leg is
         reached, this commitment is lost to HOUSE.
       </p>
 
-      <div className="flex flex-wrap gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Market id
-          <input
-            className="min-h-11 rounded-md border border-slate-300 px-3"
-            value={marketId}
-            onChange={(event) => setMarketId(event.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Outcome index
-          <input
-            type="number"
-            min="0"
-            className="min-h-11 w-24 rounded-md border border-slate-300 px-3"
-            value={outcomeIndex}
-            onChange={(event) => setOutcomeIndex(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="min-h-11 self-end rounded-md border border-slate-300 px-4 text-sm font-medium"
-          onClick={async () => {
-            if (marketId.trim() === "") return;
-            const response = await fetch(
-              `/api/positions?marketId=${encodeURIComponent(marketId.trim())}`
-            );
-            const body = (await response.json()) as { positions?: PositionLot[] };
-            setLots(toEligibleLots(body.positions ?? [], Number(outcomeIndex)));
-          }}
-        >
-          Load eligible lots
-        </button>
+      <div>
+        <h3 className="text-sm font-medium text-slate-900">Choose from your holdings</h3>
+        <p className="mt-1 text-xs text-slate-600">
+          The appended leg is seeded from a market and outcome you already hold open shares in — it
+          is not a new trade.
+        </p>
       </div>
 
-      <EligiblePositionCommitSelector
-        lots={lots}
-        selectedCommitments={selected}
-        onCommitmentChange={(positionId, shares) =>
-          setSelected((current) => ({ ...current, [positionId]: shares }))
-        }
-        errorMessage={null}
-      />
+      {holdingsStatus === "loading" ? (
+        <p className="text-sm text-slate-500">Loading your holdings…</p>
+      ) : null}
+
+      {holdingsStatus === "error" ? (
+        <p role="alert" className="text-sm text-red-700">
+          Your holdings could not be loaded right now.
+        </p>
+      ) : null}
+
+      {holdingsStatus === "success" && holdings.length === 0 ? (
+        <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600">
+          You don&apos;t hold any open positions eligible to append.
+        </p>
+      ) : null}
+
+      {holdingsStatus === "success" && holdings.length > 0 ? (
+        <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+          {holdings.map((holding) => {
+            const isSelected =
+              selectedHolding?.marketId === holding.marketId &&
+              selectedHolding?.outcomeIndex === holding.outcomeIndex;
+
+            return (
+              <div
+                key={`${holding.marketId}:${holding.outcomeIndex}`}
+                className="flex items-center justify-between gap-3 px-3 py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-950">{holding.marketQuestion}</p>
+                  <p className="text-xs text-slate-600">
+                    {holding.outcomeLabel} · {holding.availableShares} shares available
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="min-h-11 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700"
+                  onClick={() => {
+                    setSelectedHolding({
+                      marketId: holding.marketId,
+                      marketQuestion: holding.marketQuestion,
+                      outcomeIndex: holding.outcomeIndex,
+                      outcomeLabel: holding.outcomeLabel
+                    });
+                    setError(null);
+                  }}
+                >
+                  {isSelected ? "Selected" : "Choose"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {selectedHolding ? (
+        <EligiblePositionCommitSelector
+          lots={eligibleLots}
+          selectedCommitments={selected}
+          onCommitmentChange={(positionId, shares) =>
+            setSelected((current) => ({ ...current, [positionId]: shares }))
+          }
+          errorMessage={null}
+        />
+      ) : null}
 
       {error?.code === "LEG_APPEND_TOO_EARLY" ? (
         <p role="alert" className="text-xs text-red-600">
@@ -445,9 +560,11 @@ function AppendLegSection({
 
       <button
         type="button"
-        disabled={submitting || commitments.length === 0 || marketId.trim() === ""}
+        disabled={submitting || commitments.length === 0 || !selectedHolding}
         className="min-h-11 self-start rounded-md bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         onClick={async () => {
+          if (!selectedHolding) return;
+
           setSubmitting(true);
           setError(null);
 
@@ -455,8 +572,8 @@ function AppendLegSection({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              marketId: marketId.trim(),
-              outcomeIndex: Number(outcomeIndex),
+              marketId: selectedHolding.marketId,
+              outcomeIndex: selectedHolding.outcomeIndex,
               commitments
             })
           });
@@ -472,8 +589,7 @@ function AppendLegSection({
           }
 
           setSelected({});
-          setMarketId("");
-          setLots([]);
+          setSelectedHolding(null);
           onCommitted();
         }}
       >
