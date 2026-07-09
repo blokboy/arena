@@ -253,6 +253,99 @@ describe("POST /api/parlays/:id/legs/:legId/rollover-vote", () => {
     expect(body.data.didExecuteRollover).toBe(true);
   });
 
+  test("member vote is a persistent, freely reversible toggle before it becomes decisive", async () => {
+    const marketId = await seedCachedMarket();
+    const [alice, bob] = await Promise.all([
+      userRepository.createUser({ username: "alice", passwordHash: "hashed" }),
+      userRepository.createUser({ username: "bob", passwordHash: "hashed" })
+    ]);
+    const [alicePosition, bobPosition] = await Promise.all([
+      seedPosition({ userId: alice.id, marketId, shares: "100" }),
+      seedPosition({ userId: bob.id, marketId, shares: "100" })
+    ]);
+
+    const createResponse = await createParlay(
+      jsonRequest(
+        "http://arena.test/api/parlays",
+        { name: "Reversible Vote", inviteUserIds: [bob.id] },
+        { "x-test-user-id": alice.id }
+      )
+    );
+    const { parlay } = (await createResponse.json()) as { parlay: { id: string } };
+
+    const legResponse = await createLeg(
+      jsonRequest(
+        `http://arena.test/api/parlays/${parlay.id}/legs`,
+        {
+          marketId: "market-democrat-win-2028",
+          outcomeIndex: 0,
+          // alice: 30/100 × 64 = 19.2 principal
+          commitments: [{ positionId: alicePosition.id, shares: "30" }]
+        },
+        { "x-test-user-id": alice.id }
+      ),
+      { params: Promise.resolve({ id: parlay.id }) }
+    );
+    const { leg } = (await legResponse.json()) as { leg: { id: string } };
+
+    // bob: 50/100 × 64 = 32 principal — alice's 19.2 of 51.2 total member
+    // stake is ~37.5%, so her vote alone can never be decisive here.
+    await stakeLeg(
+      jsonRequest(
+        `http://arena.test/api/parlays/${parlay.id}/legs/${leg.id}/stake`,
+        { commitments: [{ positionId: bobPosition.id, shares: "50" }] },
+        { "x-test-user-id": bob.id }
+      ),
+      { params: Promise.resolve({ id: parlay.id, legId: leg.id }) }
+    );
+
+    const { request: yesRequest, context: yesContext } = voteRequest(
+      parlay.id,
+      leg.id,
+      { vote: true },
+      alice.id
+    );
+    const yesResponse = await rolloverVote(yesRequest, yesContext);
+    const yesBody = (await yesResponse.json()) as {
+      data: {
+        tally: { passes: boolean; members: Array<{ userId: string; votingYes: boolean }> };
+        didExecuteRollover: boolean;
+      };
+    };
+
+    expect(yesResponse.status).toBe(200);
+    expect(yesBody.data.tally.passes).toBe(false);
+    expect(yesBody.data.didExecuteRollover).toBe(false);
+    expect(yesBody.data.tally.members.find((m) => m.userId === alice.id)?.votingYes).toBe(true);
+
+    const { request: noRequest, context: noContext } = voteRequest(
+      parlay.id,
+      leg.id,
+      { vote: false },
+      alice.id
+    );
+    const noResponse = await rolloverVote(noRequest, noContext);
+    const noBody = (await noResponse.json()) as {
+      data: {
+        vote: { value: boolean };
+        tally: { passes: boolean; members: Array<{ userId: string; votingYes: boolean }> };
+        didExecuteRollover: boolean;
+      };
+    };
+
+    expect(noResponse.status).toBe(200);
+    expect(noBody.data.vote.value).toBe(false);
+    expect(noBody.data.tally.passes).toBe(false);
+    expect(noBody.data.didExecuteRollover).toBe(false);
+    expect(noBody.data.tally.members.find((m) => m.userId === alice.id)?.votingYes).toBe(false);
+
+    const legRow = await prisma.parlayLeg.findUnique({
+      where: { id: leg.id },
+      select: { status: true }
+    });
+    expect(legRow?.status).toBe("ACTIVE");
+  });
+
   test("after rollover executes, the leg is ROLLED_OVER and further vote toggles are rejected", async () => {
     const marketId = await seedCachedMarket();
     const alice = await userRepository.createUser({
