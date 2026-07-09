@@ -6,6 +6,7 @@ import {
   computeCommittedPrincipal,
   createRegularParlay,
   divideCommitDecimals,
+  executeRegularParlayRollover,
   getChronologicalLegs,
   settleRegularParlayLoss,
   sumCommitDecimals,
@@ -193,6 +194,38 @@ describe("regular parlays", () => {
         { userId: "bob", amount: 49, sharePct: 0.49, votingYes: false }
       ]
     });
+  });
+
+  it("recomputes a member's vote weight live from their current stake, not a snapshot at vote-cast time (ADR-0003)", () => {
+    // Alice votes yes while holding 40 of 100 member stake — not decisive on its own.
+    const beforeMoreStake = tallyMemberRolloverVote({
+      memberIds: ["alice", "bob"],
+      stakes: [
+        { userId: "alice", amount: 40 },
+        { userId: "bob", amount: 60 }
+      ],
+      votes: { alice: true }
+    });
+    expect(beforeMoreStake.passes).toBe(false);
+    expect(beforeMoreStake.yesMemberStake).toBe(40);
+
+    // Alice adds more stake to the same leg without touching her vote at all —
+    // the same `votes` record, only `stakes` changed — and her existing "yes"
+    // now covers enough weight to pass on its own.
+    const afterMoreStake = tallyMemberRolloverVote({
+      memberIds: ["alice", "bob"],
+      stakes: [
+        { userId: "alice", amount: 61 },
+        { userId: "bob", amount: 60 }
+      ],
+      votes: { alice: true }
+    });
+
+    expect(afterMoreStake.yesMemberStake).toBe(61);
+    expect(afterMoreStake.members.find((m) => m.userId === "alice")?.sharePct).toBeCloseTo(
+      61 / 121
+    );
+    expect(afterMoreStake.passes).toBe(true);
   });
 
   it("transfers all active and pending at-risk stake to HOUSE when a regular parlay loses", () => {
@@ -405,5 +438,113 @@ describe("sumCommitDecimals", () => {
 
   it("handles fractional values", () => {
     expect(sumCommitDecimals(["100.5", "50.25"])).toBe("150.75");
+  });
+});
+
+describe("executeRegularParlayRollover", () => {
+  const leg1 = {
+    id: "leg-1",
+    marketId: "market-1",
+    outcomeId: "yes",
+    endDate: new Date("2026-07-07T18:00:00.000Z"),
+    gammaId: "gamma-1",
+    status: "ACTIVE" as const,
+    stakes: [{ userId: "alice", amount: 100 }, { userId: "bob", amount: 50 }]
+  };
+  const leg2 = {
+    id: "leg-2",
+    marketId: "market-2",
+    outcomeId: "no",
+    endDate: new Date("2026-07-08T18:00:00.000Z"),
+    gammaId: "gamma-2",
+    status: "PENDING" as const,
+    stakes: [{ userId: "alice", amount: 0 }]
+  };
+  const legs = [leg1, leg2];
+
+  it("computes rollforward from bestBid to next leg bestAsk for every backer", () => {
+    const result = executeRegularParlayRollover({
+      legs,
+      legId: "leg-1",
+      stakesWithShares: [
+        { userId: "alice", shares: 100, amount: 100 },
+        { userId: "bob", shares: 50, amount: 50 }
+      ],
+      bestBid: 0.6,
+      nextLegBestAsk: 0.5,
+      exitedAt: new Date("2026-07-07T19:00:00.000Z")
+    });
+
+    expect(result.currentLegId).toBe("leg-1");
+    expect(result.nextLegId).toBe("leg-2");
+    // alice: 100 shares × 0.6 = 60 → 60 / 0.5 = 120 shares
+    // bob: 50 shares × 0.6 = 30 → 30 / 0.5 = 60 shares
+    expect(result.rollForwardByUser).toEqual({
+      alice: { shares: 120, amount: 60 },
+      bob: { shares: 60, amount: 30 }
+    });
+  });
+
+  it("returns no next leg when rolling over the final leg", () => {
+    const result = executeRegularParlayRollover({
+      legs: [leg1],
+      legId: "leg-1",
+      stakesWithShares: [
+        { userId: "alice", shares: 100, amount: 100 }
+      ],
+      bestBid: 0.6,
+      nextLegBestAsk: null,
+      exitedAt: new Date("2026-07-07T19:00:00.000Z")
+    });
+
+    expect(result.nextLegId).toBeNull();
+    expect(result.rollForwardByUser).toEqual({});
+  });
+
+  it("includes all backers including non-members in the rollforward", () => {
+    const result = executeRegularParlayRollover({
+      legs,
+      legId: "leg-1",
+      stakesWithShares: [
+        { userId: "alice", shares: 100, amount: 100 },
+        { userId: "chris", shares: 40, amount: 40 }
+      ],
+      bestBid: 0.5,
+      nextLegBestAsk: 0.4,
+      exitedAt: new Date("2026-07-07T19:00:00.000Z")
+    });
+
+    // alice: 100 × 0.5 = 50 → 50 / 0.4 = 125 shares
+    // chris: 40 × 0.5 = 20 → 20 / 0.4 = 50 shares
+    expect(result.rollForwardByUser).toEqual({
+      alice: { shares: 125, amount: 50 },
+      chris: { shares: 50, amount: 20 }
+    });
+  });
+
+  it("throws LEG_NOT_FOUND for an unknown leg id", () => {
+    expect(() =>
+      executeRegularParlayRollover({
+        legs,
+        legId: "nonexistent",
+        stakesWithShares: [{ userId: "alice", shares: 100, amount: 100 }],
+        bestBid: 0.6,
+        nextLegBestAsk: 0.5,
+        exitedAt: new Date("2026-07-07T19:00:00.000Z")
+      })
+    ).toThrow("LEG_NOT_FOUND");
+  });
+
+  it("throws LEG_NOT_FOUND for a non-active leg", () => {
+    expect(() =>
+      executeRegularParlayRollover({
+        legs,
+        legId: "leg-2",
+        stakesWithShares: [{ userId: "alice", shares: 100, amount: 100 }],
+        bestBid: 0.6,
+        nextLegBestAsk: 0.5,
+        exitedAt: new Date("2026-07-07T19:00:00.000Z")
+      })
+    ).toThrow("LEG_NOT_FOUND");
   });
 });

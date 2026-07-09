@@ -57,6 +57,12 @@ export type RolloverVoteTally = Readonly<{
   }>[];
 }>;
 
+export type RegularParlayRollover = Readonly<{
+  currentLegId: string;
+  nextLegId: string | null;
+  rollForwardByUser: Readonly<Record<UserId, Readonly<{ shares: number; amount: number }>>>;
+}>;
+
 export type HouseTransaction = Readonly<{
   type: "PARLAY_LEG_LOSS";
   amount: number;
@@ -394,6 +400,55 @@ export function settleRegularParlayLoss(
       legId: lostLegId
     })
   };
+}
+
+export function executeRegularParlayRollover(input: {
+  legs: readonly RegularParlayLeg[];
+  legId: string;
+  stakesWithShares: readonly Readonly<{
+    userId: UserId;
+    shares: number;
+    amount: number;
+  }>[];
+  bestBid: number;
+  nextLegBestAsk: number | null;
+  exitedAt: Date;
+}): RegularParlayRollover {
+  const legIndex = input.legs.findIndex((leg) => leg.id === input.legId);
+  if (legIndex === -1) {
+    throw new RegularParlayDomainError("LEG_NOT_FOUND");
+  }
+
+  const targetLeg = input.legs[legIndex]!;
+  if (targetLeg.status !== "ACTIVE") {
+    throw new RegularParlayDomainError("LEG_NOT_FOUND");
+  }
+
+  const nextLegIndex = input.legs.findIndex(
+    (leg, idx) => idx > legIndex && leg.status === "PENDING"
+  );
+  const nextLegId = nextLegIndex !== -1 ? input.legs[nextLegIndex]!.id : null;
+
+  const rollForwardByUser: Record<UserId, { shares: number; amount: number }> = {};
+
+  for (const stake of input.stakesWithShares) {
+    const payout = stake.shares * input.bestBid;
+
+    if (nextLegId && input.nextLegBestAsk && input.nextLegBestAsk > 0) {
+      const rolledShares = payout / input.nextLegBestAsk;
+      const existing = rollForwardByUser[stake.userId];
+      rollForwardByUser[stake.userId] = {
+        shares: (existing?.shares ?? 0) + rolledShares,
+        amount: (existing?.amount ?? 0) + payout
+      };
+    }
+  }
+
+  return Object.freeze({
+    currentLegId: input.legId,
+    nextLegId,
+    rollForwardByUser: Object.freeze(rollForwardByUser)
+  });
 }
 
 function buildLeg(
