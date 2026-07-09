@@ -36,8 +36,10 @@ test("user buys a position, then sells it from the portfolio page", async ({ pag
   await expect(page.getByText(/Bought .+ shares/)).toBeVisible();
   await expect(page.getByText("Balance 900")).toBeVisible();
 
-  // Navigate to portfolio and see the open position.
-  await page.getByRole("link", { name: "Portfolio" }).click();
+  // Navigate to portfolio and see the open position. exact: true avoids a
+  // strict-mode collision with the market-detail page's own "View portfolio"
+  // link, whose accessible name also contains "Portfolio".
+  await page.getByRole("link", { name: "Portfolio", exact: true }).click();
   await expect(page).toHaveURL("/portfolio");
   await expect(page.getByRole("heading", { name: "Open positions" })).toBeVisible();
 
@@ -51,11 +53,15 @@ test("user buys a position, then sells it from the portfolio page", async ({ pag
   await sellAllButton.click();
 
   // The confirmation dialog appears.
-  await expect(page.getByText("Sell all available shares?")).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Sell all available shares?" });
+  await expect(dialog).toBeVisible();
 
-  // Confirm the sell.
-  await page.getByRole("button", { name: "Sell all available" }).click();
+  // Confirm the sell. Scoped to the dialog to avoid a strict-mode collision
+  // with the row's own trigger button, which shares the same accessible name.
+  await dialog.getByRole("button", { name: "Sell all available" }).click();
 
-  // The portfolio should show sell feedback.
-  await expect(page.getByText(/Sold/)).toBeVisible({ timeout: 10000 });
+  // The portfolio should show sell feedback. The regex requires a number
+  // after "Sold" to avoid a strict-mode collision with the settled row's
+  // own plain "Sold" status badge, which appears on the same page.
+  await expect(page.getByText(/Sold [\d.]/)).toBeVisible({ timeout: 10000 });
 });
