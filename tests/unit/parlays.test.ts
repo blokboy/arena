@@ -196,6 +196,38 @@ describe("regular parlays", () => {
     });
   });
 
+  it("recomputes a member's vote weight live from their current stake, not a snapshot at vote-cast time (ADR-0003)", () => {
+    // Alice votes yes while holding 40 of 100 member stake — not decisive on its own.
+    const beforeMoreStake = tallyMemberRolloverVote({
+      memberIds: ["alice", "bob"],
+      stakes: [
+        { userId: "alice", amount: 40 },
+        { userId: "bob", amount: 60 }
+      ],
+      votes: { alice: true }
+    });
+    expect(beforeMoreStake.passes).toBe(false);
+    expect(beforeMoreStake.yesMemberStake).toBe(40);
+
+    // Alice adds more stake to the same leg without touching her vote at all —
+    // the same `votes` record, only `stakes` changed — and her existing "yes"
+    // now covers enough weight to pass on its own.
+    const afterMoreStake = tallyMemberRolloverVote({
+      memberIds: ["alice", "bob"],
+      stakes: [
+        { userId: "alice", amount: 61 },
+        { userId: "bob", amount: 60 }
+      ],
+      votes: { alice: true }
+    });
+
+    expect(afterMoreStake.yesMemberStake).toBe(61);
+    expect(afterMoreStake.members.find((m) => m.userId === "alice")?.sharePct).toBeCloseTo(
+      61 / 121
+    );
+    expect(afterMoreStake.passes).toBe(true);
+  });
+
   it("transfers all active and pending at-risk stake to HOUSE when a regular parlay loses", () => {
     const parlay = appendRegularParlayLeg(
       createRegularParlay({
