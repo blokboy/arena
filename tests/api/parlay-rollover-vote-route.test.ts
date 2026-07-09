@@ -389,4 +389,119 @@ describe("POST /api/parlays/:id/legs/:legId/rollover-vote", () => {
       error: { code: "LEG_NOT_ACTIVE" }
     });
   });
+
+  test("two members' votes cast concurrently, only decisive combined, still execute the rollover exactly once", async () => {
+    // Neither alice nor bob is decisive alone (50% of member stake each,
+    // not strictly greater) — only their combined "yes" crosses 50%. Firing
+    // both votes concurrently exercises PRD Part IV's race/idempotency
+    // requirement: the endpoint must lock and re-tally under the lock so a
+    // decisive combination reached by two simultaneous casts still executes
+    // the rollover exactly once, not zero times (lost update) or twice
+    // (double-credited rollforward).
+    const marketId = await seedCachedMarket();
+    const [alice, bob] = await Promise.all([
+      userRepository.createUser({ username: "alice", passwordHash: "hashed" }),
+      userRepository.createUser({ username: "bob", passwordHash: "hashed" })
+    ]);
+    const [alicePosition, bobPosition] = await Promise.all([
+      prisma.position.create({
+        data: {
+          userId: alice.id,
+          marketId,
+          outcomeIndex: 0,
+          entryPrice: "1",
+          stake: "30",
+          shares: "30"
+        }
+      }),
+      prisma.position.create({
+        data: {
+          userId: bob.id,
+          marketId,
+          outcomeIndex: 0,
+          entryPrice: "1",
+          stake: "30",
+          shares: "30"
+        }
+      })
+    ]);
+
+    const createResponse = await createParlay(
+      jsonRequest(
+        "http://arena.test/api/parlays",
+        { name: "Concurrent Vote", inviteUserIds: [bob.id] },
+        { "x-test-user-id": alice.id }
+      )
+    );
+    const { parlay } = (await createResponse.json()) as { parlay: { id: string } };
+
+    const legResponse = await createLeg(
+      jsonRequest(
+        `http://arena.test/api/parlays/${parlay.id}/legs`,
+        {
+          marketId: "market-democrat-win-2028",
+          outcomeIndex: 0,
+          commitments: [{ positionId: alicePosition.id, shares: "30" }]
+        },
+        { "x-test-user-id": alice.id }
+      ),
+      { params: Promise.resolve({ id: parlay.id }) }
+    );
+    const { leg } = (await legResponse.json()) as { leg: { id: string } };
+
+    await stakeLeg(
+      jsonRequest(
+        `http://arena.test/api/parlays/${parlay.id}/legs/${leg.id}/stake`,
+        { commitments: [{ positionId: bobPosition.id, shares: "30" }] },
+        { "x-test-user-id": bob.id }
+      ),
+      { params: Promise.resolve({ id: parlay.id, legId: leg.id }) }
+    );
+
+    const aliceVote = voteRequest(parlay.id, leg.id, { vote: true }, alice.id);
+    const bobVote = voteRequest(parlay.id, leg.id, { vote: true }, bob.id);
+
+    const [aliceResponse, bobResponse] = await Promise.all([
+      rolloverVote(aliceVote.request, aliceVote.context),
+      rolloverVote(bobVote.request, bobVote.context)
+    ]);
+    const [aliceBody, bobBody] = (await Promise.all([
+      aliceResponse.json(),
+      bobResponse.json()
+    ])) as Array<{ data?: { didExecuteRollover: boolean }; error?: { code: string } }>;
+
+    // Both requests must be individually well-formed (200, or a structured
+    // conflict if the loser of the race observes the leg mid-transition) —
+    // never an unhandled throw from two writers touching the same row.
+    for (const response of [aliceResponse, bobResponse]) {
+      expect([200, 409]).toContain(response.status);
+    }
+
+    const executions = [aliceBody, bobBody].filter(
+      (body) => body.data?.didExecuteRollover === true
+    ).length;
+
+    // The decisive combination must execute the rollover exactly once: not
+    // zero (a lost update where neither request's stale re-tally sees the
+    // other's vote), and not twice (double-crediting the rollforward into
+    // whatever leg comes next).
+    expect(executions).toBe(1);
+
+    const legRow = await prisma.parlayLeg.findUnique({
+      where: { id: leg.id },
+      select: { status: true }
+    });
+    expect(legRow?.status).toBe("ROLLED_OVER");
+
+    const [aliceVoteRow, bobVoteRow] = await Promise.all([
+      prisma.rolloverVote.findUnique({
+        where: { legId_userId: { legId: leg.id, userId: alice.id } }
+      }),
+      prisma.rolloverVote.findUnique({
+        where: { legId_userId: { legId: leg.id, userId: bob.id } }
+      })
+    ]);
+    expect(aliceVoteRow?.value).toBe(true);
+    expect(bobVoteRow?.value).toBe(true);
+  });
 });
