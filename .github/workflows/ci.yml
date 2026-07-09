@@ -137,6 +137,7 @@ jobs:
       DATABASE_URL: postgresql://arena:arena@localhost:5432/arena_e2e
       AUTH_SECRET: test-auth-secret
       NEXTAUTH_URL: http://localhost:3000
+      CRON_SECRET: test-cron-secret
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

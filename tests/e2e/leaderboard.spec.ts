@@ -60,7 +60,9 @@ test("leaderboard ranks every user, keeps MEAN synthetic and separate, and surfa
   await expect(callerRow.getByText(/you/i)).toBeVisible();
 
   // MEAN is a distinct, labeled, synthetic row — never a competing "user".
-  await expect(page.getByText("MEAN")).toBeVisible();
+  // exact: true avoids a strict-mode collision with the table's sr-only
+  // caption, whose full sentence also contains the word "MEAN".
+  await expect(page.getByText("MEAN", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Live average balance across all users — not a real account.")
   ).toBeVisible();
