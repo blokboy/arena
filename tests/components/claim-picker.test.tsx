@@ -88,7 +88,34 @@ describe("ClaimPicker", () => {
 
     render(<ClaimPicker eligibleEvents={eventsWithNoAvailable} onClaimed={vi.fn()} />);
 
-    expect(screen.getByText(/no markets available to claim/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no markets in your portfolio are eligible to claim/i)
+    ).toBeInTheDocument();
+  });
+
+  test("hides an available market the caller holds no shares in", () => {
+    const noHoldingsMarket = {
+      ...availableMarket,
+      marketId: "market-4",
+      gammaId: "gamma-4",
+      question: "Market with no owned shares?",
+      myAvailableLots: []
+    };
+    const eventsWithNoHoldings: DaysParlayEligibleEvent[] = [
+      {
+        eventId: "event-3",
+        title: "No Holdings Events",
+        category: "cat",
+        markets: [noHoldingsMarket]
+      }
+    ];
+
+    render(<ClaimPicker eligibleEvents={eventsWithNoHoldings} onClaimed={vi.fn()} />);
+
+    expect(screen.queryByText("Market with no owned shares?")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/no markets in your portfolio are eligible to claim/i)
+    ).toBeInTheDocument();
   });
 
   test("renders available markets grouped by event", () => {

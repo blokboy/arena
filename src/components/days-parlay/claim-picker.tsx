@@ -23,13 +23,14 @@ export function ClaimPicker({ eligibleEvents, onClaimed }: ClaimPickerProps) {
   const [submitting, setSubmitting] = useState(false);
 
   const hasClaimableMarkets = eligibleEvents.some((event) =>
-    event.markets.some((m) => m.claimStatus === "available")
+    event.markets.some((m) => m.claimStatus === "available" && m.myAvailableLots.length > 0)
   );
 
   if (!hasClaimableMarkets) {
     return (
       <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600">
-        No markets available to claim right now.
+        No markets in your portfolio are eligible to claim right now — buy shares in a
+        today-resolving market first, then claim it here.
       </p>
     );
   }
@@ -37,7 +38,9 @@ export function ClaimPicker({ eligibleEvents, onClaimed }: ClaimPickerProps) {
   return (
     <div className="flex flex-col gap-4">
       {eligibleEvents.map((event) => {
-        const availableMarkets = event.markets.filter((m) => m.claimStatus === "available");
+        const availableMarkets = event.markets.filter(
+          (m) => m.claimStatus === "available" && m.myAvailableLots.length > 0
+        );
         if (availableMarkets.length === 0) return null;
 
         return (
