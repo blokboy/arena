@@ -8,7 +8,11 @@ import {
   tallyMemberRolloverVote
 } from "@/domain/parlays";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
-import { marketCacheRepository, refreshMarketIfStale, type MarketCacheRepository } from "@/server/markets";
+import {
+  marketCacheRepository,
+  refreshMarketIfStale,
+  type MarketCacheRepository
+} from "@/server/markets";
 import { positionRepository, type PositionRepository } from "@/server/positions";
 import { userRepository } from "@/server/users";
 
@@ -231,20 +235,21 @@ export type RegularParlayDetailLeg = {
     shares: string;
     averageEntryPrice: string;
     status: string;
+    payout: string;
+    rolledForwardFromLegId: string | null;
+    rolledForwardToLegId: string | null;
   }>;
-  memberVoteTally:
-    | {
-        totalMemberStake: string;
-        yesStake: string;
-        members: Array<{
-          userId: string;
-          username: string;
-          amount: string;
-          sharePct: number;
-          votingYes: boolean;
-        }>;
-      }
-    | null;
+  memberVoteTally: {
+    totalMemberStake: string;
+    yesStake: string;
+    members: Array<{
+      userId: string;
+      username: string;
+      amount: string;
+      sharePct: number;
+      votingYes: boolean;
+    }>;
+  } | null;
   callerStake: {
     amount: string;
     shares: string;
@@ -287,6 +292,8 @@ export async function getRegularParlayDetail(
               shares: true,
               averageEntryPrice: true,
               status: true,
+              payout: true,
+              rolledForwardFromLegId: true,
               user: { select: { id: true, username: true } }
             }
           },
@@ -330,6 +337,7 @@ export async function getRegularParlayDetail(
         })),
         votes: Object.fromEntries(leg.votes.map((vote) => [vote.userId, vote.value]))
       });
+      const nextLeg = parlay.legs[legIndex + 1];
 
       const isFinalLeg = legIndex >= parlay.legs.length - 1;
       const nextLegBestAsk = !isFinalLeg
@@ -362,7 +370,16 @@ export async function getRegularParlayDetail(
           amount: stake.amount.toString(),
           shares: stake.shares.toString(),
           averageEntryPrice: stake.averageEntryPrice.toString(),
-          status: stake.status
+          status: stake.status,
+          payout: stake.payout.toString(),
+          rolledForwardFromLegId: stake.rolledForwardFromLegId,
+          rolledForwardToLegId:
+            nextLeg?.stakes.find(
+              (nextStake) =>
+                nextStake.rolledForwardFromLegId === leg.id && nextStake.user.id === stake.user.id
+            ) !== undefined
+              ? nextLeg!.id
+              : null
         })),
         memberVoteTally:
           tally.totalMemberStake === 0
@@ -505,7 +522,10 @@ export async function addFirstParlayLeg(input: {
         throw new Error("ACTIVE_LEG_REQUIRED");
       }
 
-      assertLegResolvesAfterActiveLeg(activeLeg.market.endDate ?? activeLeg.resolutionAt, marketEndDate);
+      assertLegResolvesAfterActiveLeg(
+        activeLeg.market.endDate ?? activeLeg.resolutionAt,
+        marketEndDate
+      );
     }
 
     const allLots = await positions.listLotsByUserId(input.userId);
@@ -1001,8 +1021,7 @@ export async function castRegularParlayRolloverVote(input: {
     const bestBidNum = Number(bestBid.toString());
 
     const nextLeg = parlay.legs.find(
-      (leg, idx) =>
-        idx > parlay.legs.indexOf(targetLeg) && leg.status === "PENDING"
+      (leg, idx) => idx > parlay.legs.indexOf(targetLeg) && leg.status === "PENDING"
     );
     const nextLegBestAsk = nextLeg?.market.bestAsk
       ? Number(nextLeg.market.bestAsk.toString())
@@ -1149,4 +1168,5 @@ export async function clearParlayData(): Promise<void> {
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayMember" CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayLeg" CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Parlay" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "HouseTransaction" CASCADE`);
 }

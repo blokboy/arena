@@ -68,7 +68,8 @@ describe("settlement and stipend cron APIs", () => {
       ok: true,
       marketIds: ["market-democrat-win-2028"],
       skippedMarketIds: [],
-      settledPositions: 1
+      settledPositions: 1,
+      settledParlayLegStakes: 0
     });
   });
 

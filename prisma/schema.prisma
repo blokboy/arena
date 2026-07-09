@@ -47,29 +47,29 @@ enum LegStakeStatus {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  username       String   @unique
+  id             String    @id @default(cuid())
+  username       String    @unique
   passwordHash   String
-  balance        Decimal  @default(1000) @db.Decimal(18, 6)
+  balance        Decimal   @default(1000) @db.Decimal(18, 6)
   signupBannerAt DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  positions       Position[]
-  createdParlays  Parlay[]             @relation("CreatedParlays")
-  memberships     ParlayMember[]
-  legStakes       LegStake[]
-  rolloverVotes   RolloverVote[]
-  stipendGrants   BankruptcyStipendGrant[]
+  positions      Position[]
+  createdParlays Parlay[]                 @relation("CreatedParlays")
+  memberships    ParlayMember[]
+  legStakes      LegStake[]
+  rolloverVotes  RolloverVote[]
+  stipendGrants  BankruptcyStipendGrant[]
 }
 
 model CachedEvent {
-  id           String   @id @default(cuid())
-  gammaId      String   @unique
+  id           String         @id @default(cuid())
+  gammaId      String         @unique
   category     String
   title        String
   slug         String
-  volume       Decimal  @default(0) @db.Decimal(18, 6)
+  volume       Decimal        @default(0) @db.Decimal(18, 6)
   lastSyncedAt DateTime
   markets      CachedMarket[]
 }
@@ -97,23 +97,24 @@ model CachedMarket {
 }
 
 model Position {
-  id              String         @id @default(cuid())
-  userId          String
-  marketId        String
-  outcomeIndex    Int
-  entryPrice      Decimal        @db.Decimal(18, 6)
-  stake           Decimal        @db.Decimal(18, 6)
-  shares          Decimal        @db.Decimal(18, 6)
-  committedShares Decimal        @default(0) @db.Decimal(18, 6)
-  status          PositionStatus @default(OPEN)
-  exitPrice       Decimal?       @db.Decimal(18, 6)
-  realizedPoints  Decimal?       @db.Decimal(18, 6)
-  exitedAt        DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  userId           String
+  marketId         String
+  outcomeIndex     Int
+  entryPrice       Decimal        @db.Decimal(18, 6)
+  stake            Decimal        @db.Decimal(18, 6)
+  shares           Decimal        @db.Decimal(18, 6)
+  committedShares  Decimal        @default(0) @db.Decimal(18, 6)
+  status           PositionStatus @default(OPEN)
+  exitPrice        Decimal?       @db.Decimal(18, 6)
+  realizedPoints   Decimal?       @db.Decimal(18, 6)
+  exitedAt         DateTime?
+  committedSettled Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  user    User         @relation(fields: [userId], references: [id])
-  market  CachedMarket @relation(fields: [marketId], references: [id])
+  user    User             @relation(fields: [userId], references: [id])
+  market  CachedMarket     @relation(fields: [marketId], references: [id])
   sources LegStakeSource[]
 }
 
@@ -144,38 +145,42 @@ model ParlayMember {
 }
 
 model ParlayLeg {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   parlayId     String
   marketId     String
   outcomeIndex Int
   resolutionAt DateTime
   sortKey      String
   status       LegStatus @default(PENDING)
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
-  parlay Parlay       @relation(fields: [parlayId], references: [id])
-  market CachedMarket @relation(fields: [marketId], references: [id])
-  stakes LegStake[]
-  votes  RolloverVote[]
+  parlay                      Parlay         @relation(fields: [parlayId], references: [id])
+  market                      CachedMarket   @relation(fields: [marketId], references: [id])
+  stakes                      LegStake[]
+  votes                       RolloverVote[]
+  stakesRolledForwardFromHere LegStake[]     @relation("RolledForwardStakes")
 
   @@unique([parlayId, marketId])
 }
 
 model LegStake {
-  id                 String         @id @default(cuid())
-  legId              String
-  userId             String
-  shares             Decimal        @db.Decimal(18, 6)
-  committedPrincipal Decimal        @db.Decimal(18, 6)
-  amount             Decimal        @default(0) @db.Decimal(18, 6)
-  averageEntryPrice  Decimal        @default(0) @db.Decimal(18, 6)
-  status             LegStakeStatus @default(PENDING)
-  exitPrice          Decimal?       @db.Decimal(18, 6)
-  exitedAt           DateTime?
+  id                     String         @id @default(cuid())
+  legId                  String
+  userId                 String
+  shares                 Decimal        @db.Decimal(18, 6)
+  committedPrincipal     Decimal        @db.Decimal(18, 6)
+  amount                 Decimal        @default(0) @db.Decimal(18, 6)
+  averageEntryPrice      Decimal        @default(0) @db.Decimal(18, 6)
+  status                 LegStakeStatus @default(PENDING)
+  payout                 Decimal        @default(0) @db.Decimal(18, 6)
+  rolledForwardFromLegId String?
+  exitPrice              Decimal?       @db.Decimal(18, 6)
+  exitedAt               DateTime?
 
-  leg     ParlayLeg        @relation(fields: [legId], references: [id])
-  user    User             @relation(fields: [userId], references: [id])
-  sources LegStakeSource[]
+  leg                  ParlayLeg        @relation(fields: [legId], references: [id])
+  user                 User             @relation(fields: [userId], references: [id])
+  sources              LegStakeSource[]
+  rolledForwardFromLeg ParlayLeg?       @relation("RolledForwardStakes", fields: [rolledForwardFromLegId], references: [id])
 
   @@unique([legId, userId])
   @@index([legId, status])
@@ -210,6 +215,8 @@ model HouseTransaction {
   id        String   @id @default(cuid())
   amount    Decimal  @db.Decimal(18, 6)
   reason    String
+  parlayId  String?
+  legId     String?
   createdAt DateTime @default(now())
 }
 

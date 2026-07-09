@@ -90,6 +90,45 @@ export function calculatePositionSettlement(input: PositionSettlementInput): Pos
   };
 }
 
+export type ParlayLegStakeSettlementInput = {
+  outcomeIndex: number;
+  isFinalLeg: boolean;
+  stakeAmount: string;
+  stakeShares: string;
+  resolution: MarketResolution;
+};
+
+export type ParlayLegStakeSettlement = {
+  status: "WON" | "LOST" | "VOIDED";
+  payout: string;
+  houseAmount: string;
+  forwardPrincipal: string | null;
+};
+
+export function calculateParlayLegStakeSettlement(
+  input: ParlayLegStakeSettlementInput
+): ParlayLegStakeSettlement {
+  if (input.resolution.status === "RESOLVED") {
+    const won = input.outcomeIndex === input.resolution.winningOutcomeIndex;
+
+    if (won) {
+      return input.isFinalLeg
+        ? { status: "WON", payout: input.stakeShares, houseAmount: "0", forwardPrincipal: null }
+        : { status: "WON", payout: "0", houseAmount: "0", forwardPrincipal: input.stakeShares };
+    }
+
+    return { status: "LOST", payout: "0", houseAmount: input.stakeAmount, forwardPrincipal: null };
+  }
+
+  if (input.resolution.status === "VOIDED") {
+    return input.isFinalLeg
+      ? { status: "VOIDED", payout: input.stakeAmount, houseAmount: "0", forwardPrincipal: null }
+      : { status: "VOIDED", payout: "0", houseAmount: "0", forwardPrincipal: input.stakeAmount };
+  }
+
+  throw new Error("NOT_IMPLEMENTED");
+}
+
 export function getUtcGrantDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }

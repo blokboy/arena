@@ -7,12 +7,19 @@ import { cn } from "@/lib/cn";
 type LockedShareValueProps = {
   lockedShares: string;
   availableShares: string;
+  // Position.committedSettled (flip-not-decrement) — once the leg(s) that
+  // consumed this locked slice reach a terminal state, the shares are gone
+  // for good (paid out, forwarded, or forfeited elsewhere), not merely
+  // "still at risk, pending resolution." Distinct copy avoids implying
+  // they might still become sellable. See PRD Part III §5.
+  committedSettled?: boolean;
   className?: string;
 };
 
 export function LockedShareValue({
   lockedShares,
   availableShares,
+  committedSettled = false,
   className
 }: LockedShareValueProps) {
   if (lockedShares === "0") {
@@ -24,7 +31,11 @@ export function LockedShareValue({
       <LockIcon aria-hidden="true" />
       <span>
         {lockedShares} locked
-        {availableShares !== "0" ? " · not sellable" : ""}
+        {committedSettled
+          ? " · resolved via parlay, no longer available"
+          : availableShares !== "0"
+            ? " · not sellable"
+            : ""}
       </span>
     </span>
   );

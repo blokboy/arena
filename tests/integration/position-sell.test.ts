@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { normalizeGammaEvent, type GammaMarket } from "@/domain/markets";
 import { prisma } from "@/server/db";
 import { marketCacheRepository } from "@/server/markets";
-import { buyPositionLot, positionRepository, sellPositionLot } from "@/server/positions";
+import { buyPositionLot, listPositionLots, positionRepository, sellPositionLot } from "@/server/positions";
 import { userRepository } from "@/server/users";
 import { binaryGammaEvent } from "@test/helpers/gamma-fixtures";
 
@@ -87,6 +87,41 @@ describe("position sell transaction", () => {
         committedShares: "0",
         stake: "100"
       })
+    );
+  });
+
+  // Position.committedSettled (flip-not-decrement, issue #11) — defaults
+  // false on creation and must round-trip through the repository once
+  // Settlement flips it true, so Portfolio can distinguish "locked, still
+  // at risk" from "locked, already resolved via parlay."
+  test("surfaces committedSettled, defaulting false and round-tripping once flipped", async () => {
+    await seedCachedPoliticsEvent();
+    const user = await userRepository.createUser({ username: "priya", passwordHash: "hashed" });
+
+    const buy = await buyPositionLot({
+      user,
+      marketId: "market-democrat-win-2028",
+      outcomeIndex: 0,
+      stake: "100",
+      now: new Date("2026-07-06T13:00:00.000Z")
+    });
+
+    expect(await positionRepository.findById(buy.lot.id)).toEqual(
+      expect.objectContaining({ id: buy.lot.id, committedSettled: false })
+    );
+
+    await prisma.position.update({
+      where: { id: buy.lot.id },
+      data: { committedShares: "50", committedSettled: true }
+    });
+
+    expect(await positionRepository.findById(buy.lot.id)).toEqual(
+      expect.objectContaining({ id: buy.lot.id, committedShares: "50", committedSettled: true })
+    );
+
+    const listed = await listPositionLots({ userId: user.id, now: new Date("2026-07-06T13:10:00.000Z") });
+    expect(listed.find((lot) => lot.id === buy.lot.id)).toEqual(
+      expect.objectContaining({ committedSettled: true })
     );
   });
 });

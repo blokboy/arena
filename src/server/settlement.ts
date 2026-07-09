@@ -5,9 +5,11 @@ import {
   subtractDecimalStrings
 } from "@/domain/positions";
 import {
+  calculateParlayLegStakeSettlement,
   calculatePositionSettlement,
   detectMarketResolution,
-  getUtcGrantDay
+  getUtcGrantDay,
+  type MarketResolution
 } from "@/domain/settlement";
 import { BANKRUPTCY_STIPEND } from "@/lib/money";
 import { prisma } from "@/server/db";
@@ -163,9 +165,317 @@ async function applyPositionSettlement(input: {
   });
 }
 
+export async function settleActiveParlayLeg(input: {
+  legId: string;
+  resolution: MarketResolution;
+}): Promise<{ settledStakes: number }> {
+  return prisma.$transaction(async (tx) => {
+    const leg = await tx.parlayLeg.findUnique({
+      where: { id: input.legId },
+      select: {
+        id: true,
+        parlayId: true,
+        outcomeIndex: true,
+        status: true,
+        sortKey: true,
+        stakes: {
+          where: { status: "ACTIVE" },
+          select: { id: true, userId: true, amount: true, shares: true }
+        }
+      }
+    });
+
+    if (!leg || leg.status !== "ACTIVE") {
+      return { settledStakes: 0 };
+    }
+
+    const nextLeg = await tx.parlayLeg.findFirst({
+      where: { parlayId: leg.parlayId, sortKey: { gt: leg.sortKey } },
+      orderBy: { sortKey: "asc" },
+      select: {
+        id: true,
+        market: { select: { bestAsk: true } },
+        stakes: { select: { id: true, userId: true, amount: true, shares: true } }
+      }
+    });
+    const isFinalLeg = !nextLeg;
+
+    let settledStakes = 0;
+    let forwardedToNextLeg = false;
+    let legLost = false;
+    let legVoided = false;
+
+    const forwardStakeIntoNextLeg = async (input: { userId: string; forwardPrincipal: string }) => {
+      const nextBestAsk = nextLeg!.market.bestAsk?.toString();
+      if (!nextBestAsk) {
+        throw new Error("NEXT_LEG_MARKET_MISSING_BEST_ASK");
+      }
+      const forwardShares = divideDecimalStrings(input.forwardPrincipal, nextBestAsk);
+      const existingNextStake = nextLeg!.stakes.find((s) => s.userId === input.userId);
+      const newAmount = addDecimalStrings(
+        existingNextStake?.amount.toString() ?? "0",
+        input.forwardPrincipal
+      );
+      const newShares = addDecimalStrings(existingNextStake?.shares.toString() ?? "0", forwardShares);
+      const newAveragePrice = divideDecimalStrings(newAmount, newShares);
+
+      if (existingNextStake) {
+        await tx.legStake.update({
+          where: { id: existingNextStake.id },
+          data: {
+            amount: newAmount,
+            shares: newShares,
+            averageEntryPrice: newAveragePrice,
+            status: "ACTIVE",
+            rolledForwardFromLegId: leg.id
+          }
+        });
+      } else {
+        await tx.legStake.create({
+          data: {
+            legId: nextLeg!.id,
+            userId: input.userId,
+            shares: newShares,
+            committedPrincipal: "0",
+            amount: newAmount,
+            averageEntryPrice: newAveragePrice,
+            status: "ACTIVE",
+            rolledForwardFromLegId: leg.id
+          }
+        });
+      }
+
+      forwardedToNextLeg = true;
+    };
+
+    // A stake's shares always trace back to one or more Position rows via
+    // LegStakeSource (issue #9). Once a stake reaches a terminal status,
+    // those source positions are done contributing to the parlay — but a
+    // position can source more than one stake (partial commits across legs
+    // or parlays), so it's only "settled" once every stake it ever fed is
+    // itself terminal.
+    const markSourcePositionsSettledIfTerminal = async (stakeId: string) => {
+      const sources = await tx.legStakeSource.findMany({
+        where: { stakeId },
+        select: { positionId: true }
+      });
+
+      for (const positionId of new Set(sources.map((s) => s.positionId))) {
+        const allSourcedStakes = await tx.legStakeSource.findMany({
+          where: { positionId },
+          select: { stake: { select: { status: true } } }
+        });
+        const allTerminal = allSourcedStakes.every(
+          (source) => source.stake.status !== "PENDING" && source.stake.status !== "ACTIVE"
+        );
+
+        if (allTerminal) {
+          await tx.position.updateMany({
+            where: { id: positionId, committedSettled: false },
+            data: { committedSettled: true }
+          });
+        }
+      }
+    };
+
+    for (const stake of leg.stakes) {
+      const settlement = calculateParlayLegStakeSettlement({
+        outcomeIndex: leg.outcomeIndex,
+        isFinalLeg,
+        stakeAmount: stake.amount.toString(),
+        stakeShares: stake.shares.toString(),
+        resolution: input.resolution
+      });
+
+      if (settlement.status === "WON" && isFinalLeg) {
+        const updated = await tx.legStake.updateMany({
+          where: { id: stake.id, status: "ACTIVE" },
+          data: { status: "WON", payout: settlement.payout }
+        });
+        if (updated.count === 0) {
+          continue;
+        }
+
+        await tx.user.update({
+          where: { id: stake.userId },
+          data: { balance: { increment: settlement.payout } }
+        });
+        await markSourcePositionsSettledIfTerminal(stake.id);
+        settledStakes += 1;
+        continue;
+      }
+
+      if (settlement.status === "WON" && !isFinalLeg) {
+        const updated = await tx.legStake.updateMany({
+          where: { id: stake.id, status: "ACTIVE" },
+          data: { status: "WON", payout: "0" }
+        });
+        if (updated.count === 0) {
+          continue;
+        }
+
+        await forwardStakeIntoNextLeg({ userId: stake.userId, forwardPrincipal: settlement.forwardPrincipal! });
+        await markSourcePositionsSettledIfTerminal(stake.id);
+        settledStakes += 1;
+        continue;
+      }
+
+      if (settlement.status === "VOIDED" && isFinalLeg) {
+        const updated = await tx.legStake.updateMany({
+          where: { id: stake.id, status: "ACTIVE" },
+          data: { status: "VOIDED_REFUNDED", payout: settlement.payout }
+        });
+        if (updated.count === 0) {
+          continue;
+        }
+
+        await tx.user.update({
+          where: { id: stake.userId },
+          data: { balance: { increment: settlement.payout } }
+        });
+        await markSourcePositionsSettledIfTerminal(stake.id);
+        legVoided = true;
+        settledStakes += 1;
+        continue;
+      }
+
+      if (settlement.status === "VOIDED" && !isFinalLeg) {
+        const updated = await tx.legStake.updateMany({
+          where: { id: stake.id, status: "ACTIVE" },
+          data: { status: "VOIDED_REFUNDED", payout: "0" }
+        });
+        if (updated.count === 0) {
+          continue;
+        }
+
+        await forwardStakeIntoNextLeg({ userId: stake.userId, forwardPrincipal: settlement.forwardPrincipal! });
+        await markSourcePositionsSettledIfTerminal(stake.id);
+        legVoided = true;
+        settledStakes += 1;
+        continue;
+      }
+
+      if (settlement.status === "LOST") {
+        const updated = await tx.legStake.updateMany({
+          where: { id: stake.id, status: "ACTIVE" },
+          data: { status: "LOST", payout: "0" }
+        });
+        if (updated.count === 0) {
+          continue;
+        }
+
+        await tx.houseTransaction.create({
+          data: {
+            amount: settlement.houseAmount,
+            reason: "PARLAY_LEG_LOSS",
+            parlayId: leg.parlayId,
+            legId: leg.id
+          }
+        });
+        await markSourcePositionsSettledIfTerminal(stake.id);
+        legLost = true;
+        settledStakes += 1;
+      }
+    }
+
+    if (leg.stakes.length > 0 && settledStakes === leg.stakes.length) {
+      if (legLost) {
+        await tx.parlayLeg.updateMany({
+          where: { id: leg.id, status: "ACTIVE" },
+          data: { status: "LOST" }
+        });
+        await tx.parlay.updateMany({
+          where: { id: leg.parlayId, status: "ACTIVE" },
+          data: { status: "LOST" }
+        });
+
+        const trailingPendingLegs = await tx.parlayLeg.findMany({
+          where: { parlayId: leg.parlayId, status: "PENDING", sortKey: { gt: leg.sortKey } },
+          select: {
+            id: true,
+            stakes: { where: { status: "PENDING" }, select: { id: true, amount: true } }
+          }
+        });
+
+        for (const trailingLeg of trailingPendingLegs) {
+          for (const trailingStake of trailingLeg.stakes) {
+            const trailingUpdated = await tx.legStake.updateMany({
+              where: { id: trailingStake.id, status: "PENDING" },
+              data: { status: "LOST", payout: "0" }
+            });
+            if (trailingUpdated.count === 0) {
+              continue;
+            }
+
+            await tx.houseTransaction.create({
+              data: {
+                amount: trailingStake.amount,
+                reason: "PARLAY_LEG_LOSS",
+                parlayId: leg.parlayId,
+                legId: trailingLeg.id
+              }
+            });
+            await markSourcePositionsSettledIfTerminal(trailingStake.id);
+          }
+
+          await tx.parlayLeg.updateMany({
+            where: { id: trailingLeg.id, status: "PENDING" },
+            data: { status: "LOST" }
+          });
+        }
+      } else if (legVoided) {
+        await tx.parlayLeg.updateMany({
+          where: { id: leg.id, status: "ACTIVE" },
+          data: { status: "VOIDED" }
+        });
+
+        if (isFinalLeg) {
+          await tx.parlay.updateMany({
+            where: { id: leg.parlayId, status: "ACTIVE" },
+            data: { status: "VOIDED" }
+          });
+        } else if (forwardedToNextLeg) {
+          await tx.parlayLeg.updateMany({
+            where: { id: nextLeg!.id, status: "PENDING" },
+            data: { status: "ACTIVE" }
+          });
+        }
+      } else {
+        await tx.parlayLeg.updateMany({
+          where: { id: leg.id, status: "ACTIVE" },
+          data: { status: "WON" }
+        });
+
+        if (isFinalLeg) {
+          await tx.parlay.updateMany({
+            where: { id: leg.parlayId, status: "ACTIVE" },
+            data: { status: "WON" }
+          });
+        } else if (forwardedToNextLeg) {
+          await tx.parlayLeg.updateMany({
+            where: { id: nextLeg!.id, status: "PENDING" },
+            data: { status: "ACTIVE" }
+          });
+        }
+      }
+    }
+
+    return { settledStakes };
+  });
+}
+
 export async function collectOpenPositionMarketIds(): Promise<string[]> {
   const rows = await prisma.position.findMany({
     where: { status: "OPEN" },
+    select: { market: { select: { gammaId: true } } }
+  });
+
+  return [...new Set(rows.map((row) => row.market.gammaId))].sort();
+}
+
+export async function collectActiveParlayLegMarketIds(): Promise<string[]> {
+  const rows = await prisma.parlayLeg.findMany({
+    where: { status: "ACTIVE", parlay: { kind: "REGULAR" } },
     select: { market: { select: { gammaId: true } } }
   });
 
@@ -219,8 +529,12 @@ export async function runSettlementSweep(input: { now: Date; gammaClient?: Gamma
   marketIds: string[];
   skippedMarketIds: string[];
   settledPositions: number;
+  settledParlayLegStakes: number;
 }> {
-  const marketIds = await collectOpenPositionMarketIds();
+  const positionMarketIds = await collectOpenPositionMarketIds();
+  const parlayLegMarketIds = await collectActiveParlayLegMarketIds();
+  const marketIds = [...new Set([...positionMarketIds, ...parlayLegMarketIds])].sort();
+
   const { refreshedMarkets, skippedMarketIds } = await refreshOpenPositionMarkets({
     marketIds,
     now: input.now,
@@ -228,6 +542,7 @@ export async function runSettlementSweep(input: { now: Date; gammaClient?: Gamma
   });
 
   let settledPositions = 0;
+  let settledParlayLegStakes = 0;
 
   for (const market of refreshedMarkets) {
     if (!market) {
@@ -267,9 +582,19 @@ export async function runSettlementSweep(input: { now: Date; gammaClient?: Gamma
         settledPositions += 1;
       }
     }
+
+    const activeLegs = await prisma.parlayLeg.findMany({
+      where: { status: "ACTIVE", parlay: { kind: "REGULAR" }, market: { gammaId: market.gammaId } },
+      select: { id: true }
+    });
+
+    for (const leg of activeLegs) {
+      const result = await settleActiveParlayLeg({ legId: leg.id, resolution });
+      settledParlayLegStakes += result.settledStakes;
+    }
   }
 
-  return { marketIds, skippedMarketIds, settledPositions };
+  return { marketIds, skippedMarketIds, settledPositions, settledParlayLegStakes };
 }
 
 export async function grantDailyBankruptcyStipends(input: { now: Date }): Promise<{

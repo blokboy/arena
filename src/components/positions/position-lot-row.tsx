@@ -21,6 +21,7 @@ type PositionLotView = {
   purchasedAt: string;
   exitPrice?: string;
   exitedAt?: string;
+  committedSettled?: boolean;
 };
 
 type PositionLotRowProps = {
@@ -55,6 +56,7 @@ export function PositionLotRow({
             <LockedShareValue
               availableShares={availableShares}
               lockedShares={lot.committedShares}
+              committedSettled={lot.committedSettled}
             />
           </>
         ) : null}

@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     ok: true,
     marketIds: result.marketIds,
     skippedMarketIds: result.skippedMarketIds,
-    settledPositions: result.settledPositions
+    settledPositions: result.settledPositions,
+    settledParlayLegStakes: result.settledParlayLegStakes
   });
 }
