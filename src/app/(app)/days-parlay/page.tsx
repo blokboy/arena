@@ -7,7 +7,7 @@ export default async function DaysParlayPage() {
 
   return (
     <AppShell currentPath="/days-parlay" user={user}>
-      <DaysParlayClient />
+      <DaysParlayClient currentUserId={user.id} />
     </AppShell>
   );
 }
