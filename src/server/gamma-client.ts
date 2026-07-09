@@ -3,9 +3,12 @@ import type { GammaEvent, GammaMarket } from "@/domain/markets";
 export type GammaDiscoveryOptions = {
   active: boolean;
   closed: boolean;
-  order: "volume";
+  order: string;
   ascending: boolean;
   limit: number;
+  offset?: number;
+  endDateMin?: string;
+  endDateMax?: string;
 };
 
 export type GammaRequestPurpose = "trade" | "cron" | "settlement";
@@ -122,6 +125,15 @@ export const gammaClient: GammaClient = {
     url.searchParams.set("order", options.order);
     url.searchParams.set("ascending", String(options.ascending));
     url.searchParams.set("limit", String(options.limit));
+    if (options.offset !== undefined) {
+      url.searchParams.set("offset", String(options.offset));
+    }
+    if (options.endDateMin) {
+      url.searchParams.set("end_date_min", options.endDateMin);
+    }
+    if (options.endDateMax) {
+      url.searchParams.set("end_date_max", options.endDateMax);
+    }
 
     return fetchGammaJson({
       path: `${url.pathname}${url.search}`,

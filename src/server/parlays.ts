@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import {
   assertLegResolvesAfterActiveLeg,
   type Commitment,
@@ -403,6 +405,187 @@ export async function getRegularParlayDetail(
   };
 }
 
+export async function commitPositionLotsToLeg(
+  tx: ParlayTransaction,
+  input: {
+    legId: string;
+    userId: string;
+    marketId: string;
+    outcomeIndex: number;
+    commitments: Commitment[];
+    stakeStatus: "PENDING" | "ACTIVE";
+    positions?: PositionRepository;
+  }
+): Promise<ParlayStakeResult> {
+  const positions = input.positions ?? positionRepository;
+  if (input.commitments.length === 0) {
+    throw new Error("NO_COMMITMENTS");
+  }
+
+  const lotMap = await loadCommitmentLots(positions, input.userId);
+
+  validateCommitmentsForLeg({
+    commitments: input.commitments,
+    lotMap,
+    marketId: input.marketId,
+    outcomeIndex: input.outcomeIndex
+  });
+
+  await lockCommittedShares(tx, {
+    commitments: input.commitments,
+    lotMap,
+    userId: input.userId
+  });
+
+  const newShares = sumCommitDecimals(input.commitments.map((commitment) => commitment.shares));
+  const principals = input.commitments.map((commitment) =>
+    computeCommittedPrincipal({
+      commitment,
+      position: toCommitmentValidationPosition(lotMap.get(commitment.positionId)!)
+    })
+  );
+  const newPrincipal = sumCommitDecimals(principals);
+
+  const existing = await tx.legStake.findUnique({
+    where: { legId_userId: { legId: input.legId, userId: input.userId } }
+  });
+
+  const totalShares = sumCommitDecimals([existing?.shares.toString() ?? "0", newShares]);
+  const totalAmount = sumCommitDecimals([existing?.amount.toString() ?? "0", newPrincipal]);
+  const totalCommittedPrincipal = sumCommitDecimals([
+    existing?.committedPrincipal.toString() ?? "0",
+    newPrincipal
+  ]);
+  const averageEntryPrice = divideCommitDecimals(totalAmount, totalShares);
+
+  const stake = existing
+    ? await tx.legStake.update({
+        where: { id: existing.id },
+        data: {
+          shares: totalShares,
+          committedPrincipal: totalCommittedPrincipal,
+          amount: totalAmount,
+          averageEntryPrice,
+          status: input.stakeStatus
+        }
+      })
+    : await tx.legStake.create({
+        data: {
+          legId: input.legId,
+          userId: input.userId,
+          shares: totalShares,
+          committedPrincipal: newPrincipal,
+          amount: newPrincipal,
+          averageEntryPrice,
+          status: input.stakeStatus
+        }
+      });
+
+  for (let index = 0; index < input.commitments.length; index += 1) {
+    const commitment = input.commitments[index]!;
+    const lot = lotMap.get(commitment.positionId)!;
+
+    await tx.legStakeSource.create({
+      data: {
+        stakeId: stake.id,
+        positionId: lot.id,
+        shares: commitment.shares,
+        principal: principals[index]!
+      }
+    });
+  }
+
+  return {
+    stakeId: stake.id,
+    legId: input.legId,
+    amount: stake.amount.toString(),
+    shares: stake.shares.toString(),
+    averageEntryPrice: stake.averageEntryPrice.toString()
+  };
+}
+
+async function loadCommitmentLots(positions: PositionRepository, userId: string) {
+  const allLots = await positions.listLotsByUserId(userId);
+  const openLots = allLots.filter((lot) => lot.status === "OPEN");
+  return new Map(openLots.map((lot) => [lot.id, lot]));
+}
+
+function validateCommitmentsForLeg(input: {
+  commitments: Commitment[];
+  lotMap: Map<string, Awaited<ReturnType<PositionRepository["listLotsByUserId"]>>[number]>;
+  marketId: string;
+  outcomeIndex: number;
+}) {
+  for (const commit of input.commitments) {
+    const lot = input.lotMap.get(commit.positionId);
+    if (!lot) {
+      throw new Error("COMMITMENT_POSITION_NOT_FOUND");
+    }
+    if (lot.marketId !== input.marketId || lot.outcomeIndex !== input.outcomeIndex) {
+      throw new Error("COMMITMENT_MARKET_MISMATCH");
+    }
+
+    const requested = parseCommitDecimal(commit.shares);
+    const positionShares = parseCommitDecimal(lot.shares);
+    const committed = parseCommitDecimal(lot.committedShares);
+    const availableShares = {
+      value: positionShares.value - committed.value,
+      scale: positionShares.scale
+    };
+
+    if (requested.value <= 0n || requested.value > availableShares.value) {
+      throw new Error("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
+    }
+  }
+}
+
+async function lockCommittedShares(
+  tx: ParlayTransaction,
+  input: {
+    commitments: Commitment[];
+    lotMap: Map<string, Awaited<ReturnType<PositionRepository["listLotsByUserId"]>>[number]>;
+    userId: string;
+  }
+) {
+  for (const commit of input.commitments) {
+    const lot = input.lotMap.get(commit.positionId)!;
+
+    const updated = await tx.position.updateMany({
+      where: {
+        id: commit.positionId,
+        userId: input.userId,
+        status: "OPEN",
+        shares: lot.shares,
+        committedShares: lot.committedShares
+      },
+      data: {
+        committedShares: {
+          increment: commit.shares
+        }
+      }
+    });
+
+    if (updated.count === 0) {
+      throw new Error("POSITION_CONFLICT");
+    }
+  }
+}
+
+function toCommitmentValidationPosition(
+  lot: Awaited<ReturnType<PositionRepository["listLotsByUserId"]>>[number]
+) {
+  return {
+    id: lot.id,
+    userId: lot.userId,
+    marketId: lot.marketId,
+    outcomeIndex: lot.outcomeIndex,
+    shares: lot.shares,
+    committedShares: lot.committedShares,
+    stake: lot.stake,
+    status: lot.status
+  };
+}
+
 export async function createDraftParlay(input: {
   name: string;
   creatorId: string;
@@ -491,17 +674,22 @@ export async function addFirstParlayLeg(input: {
     if (!memberUserIds.has(input.userId)) {
       throw new Error("NOT_A_MEMBER");
     }
-
     if (input.commitments.length === 0) {
       throw new Error("NO_COMMITMENTS");
     }
 
     const marketRow = await tx.cachedMarket.findUnique({
       where: { gammaId: input.marketId },
-      select: { id: true, endDate: true, gammaId: true }
+      select: { id: true, endDate: true, gammaId: true, active: true, closed: true }
     });
     if (!marketRow) {
       throw new Error("MARKET_NOT_FOUND");
+    }
+    if (marketRow.closed) {
+      throw new Error("MARKET_CLOSED");
+    }
+    if (!marketRow.active) {
+      throw new Error("MARKET_INACTIVE");
     }
     if (!marketRow.endDate) {
       throw new Error("MARKET_END_DATE_MISSING");
@@ -528,58 +716,11 @@ export async function addFirstParlayLeg(input: {
       );
     }
 
-    const allLots = await positions.listLotsByUserId(input.userId);
-    const openLots = allLots.filter((lot) => lot.status === "OPEN");
-
-    const lotMap = new Map(openLots.map((l) => [l.id, l]));
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId);
-      if (!lot) {
-        throw new Error("COMMITMENT_POSITION_NOT_FOUND");
-      }
-
-      if (lot.marketId !== input.marketId || lot.outcomeIndex !== input.outcomeIndex) {
-        throw new Error("COMMITMENT_MARKET_MISMATCH");
-      }
-
-      const requested = parseCommitDecimal(commit.shares);
-      const positionShares = parseCommitDecimal(lot.shares);
-      const committed = parseCommitDecimal(lot.committedShares);
-      const availableShares = {
-        value: positionShares.value - committed.value,
-        scale: positionShares.scale
-      };
-      if (requested.value <= 0n || requested.value > availableShares.value) {
-        throw new Error("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
-      }
-    }
-
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-
-      const updated = await tx.position.updateMany({
-        where: {
-          id: commit.positionId,
-          userId: input.userId,
-          status: "OPEN",
-          shares: lot.shares,
-          committedShares: lot.committedShares
-        },
-        data: {
-          committedShares: {
-            increment: commit.shares
-          }
-        }
-      });
-      if (updated.count === 0) {
-        throw new Error("POSITION_CONFLICT");
-      }
-    }
-
     const newLeg = await tx.parlayLeg.create({
       data: {
         parlayId: input.parlayId,
         marketId: marketRow.id,
+        claimedByUserId: input.userId,
         outcomeIndex: input.outcomeIndex,
         resolutionAt: marketEndDate,
         sortKey: `${marketEndDate.toISOString()}|${marketGammaId}`,
@@ -587,65 +728,15 @@ export async function addFirstParlayLeg(input: {
       }
     });
 
-    const totalShares = sumCommitDecimals(input.commitments.map((c) => c.shares));
-    const principals: string[] = [];
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-      const principal = computeCommittedPrincipal({
-        commitment: commit,
-        position: {
-          id: lot.id,
-          userId: lot.userId,
-          marketId: lot.marketId,
-          outcomeIndex: lot.outcomeIndex,
-          shares: lot.shares,
-          committedShares: lot.committedShares,
-          stake: lot.stake,
-          status: lot.status
-        }
-      });
-      principals.push(principal);
-    }
-
-    const totalPrincipal = sumCommitDecimals(principals);
-
-    const stake = await tx.legStake.create({
-      data: {
-        legId: newLeg.id,
-        userId: input.userId,
-        shares: totalShares,
-        committedPrincipal: totalPrincipal,
-        amount: totalPrincipal,
-        averageEntryPrice: divideCommitDecimals(totalPrincipal, totalShares),
-        status: legStatus
-      }
+    await commitPositionLotsToLeg(tx, {
+      legId: newLeg.id,
+      userId: input.userId,
+      marketId: input.marketId,
+      outcomeIndex: input.outcomeIndex,
+      commitments: input.commitments,
+      stakeStatus: legStatus,
+      positions
     });
-
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-      const principal = computeCommittedPrincipal({
-        commitment: commit,
-        position: {
-          id: lot.id,
-          userId: lot.userId,
-          marketId: lot.marketId,
-          outcomeIndex: lot.outcomeIndex,
-          shares: lot.shares,
-          committedShares: lot.committedShares,
-          stake: lot.stake,
-          status: lot.status
-        }
-      });
-
-      await tx.legStakeSource.create({
-        data: {
-          stakeId: stake.id,
-          positionId: lot.id,
-          shares: commit.shares,
-          principal
-        }
-      });
-    }
 
     if (isFirstLeg) {
       await tx.parlay.update({
@@ -693,6 +784,8 @@ export type ParlayStakeResult = {
   averageEntryPrice: string;
 };
 
+type ParlayTransaction = Prisma.TransactionClient;
+
 // Backs the currently ACTIVE leg only. Open to any authenticated user — this
 // never creates a ParlayMember row, so a non-member backer stays
 // economic-only and gains no regular-parlay rollover-vote rights (issue #9).
@@ -704,6 +797,10 @@ export async function stakeParlayLeg(input: {
   positions?: PositionRepository;
 }): Promise<ParlayStakeResult> {
   const positions = input.positions ?? positionRepository;
+
+  if (input.commitments.length === 0) {
+    throw new Error("NO_COMMITMENTS");
+  }
 
   return prisma.$transaction(async (tx) => {
     const leg = await tx.parlayLeg.findFirst({
@@ -717,147 +814,15 @@ export async function stakeParlayLeg(input: {
       throw new Error("LEG_NOT_ACTIVE");
     }
 
-    if (input.commitments.length === 0) {
-      throw new Error("NO_COMMITMENTS");
-    }
-
-    const allLots = await positions.listLotsByUserId(input.userId);
-    const openLots = allLots.filter((lot) => lot.status === "OPEN");
-    const lotMap = new Map(openLots.map((l) => [l.id, l]));
-
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId);
-      if (!lot) {
-        throw new Error("COMMITMENT_POSITION_NOT_FOUND");
-      }
-      if (lot.marketId !== leg.market.gammaId || lot.outcomeIndex !== leg.outcomeIndex) {
-        throw new Error("COMMITMENT_MARKET_MISMATCH");
-      }
-
-      const requested = parseCommitDecimal(commit.shares);
-      const positionShares = parseCommitDecimal(lot.shares);
-      const committed = parseCommitDecimal(lot.committedShares);
-      const availableShares = {
-        value: positionShares.value - committed.value,
-        scale: positionShares.scale
-      };
-      if (requested.value <= 0n || requested.value > availableShares.value) {
-        throw new Error("COMMITMENT_EXCEEDS_AVAILABLE_SHARES");
-      }
-    }
-
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-
-      const updated = await tx.position.updateMany({
-        where: {
-          id: commit.positionId,
-          userId: input.userId,
-          status: "OPEN",
-          shares: lot.shares,
-          committedShares: lot.committedShares
-        },
-        data: {
-          committedShares: {
-            increment: commit.shares
-          }
-        }
-      });
-      if (updated.count === 0) {
-        throw new Error("POSITION_CONFLICT");
-      }
-    }
-
-    const newShares = sumCommitDecimals(input.commitments.map((c) => c.shares));
-    const principals: string[] = [];
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-      principals.push(
-        computeCommittedPrincipal({
-          commitment: commit,
-          position: {
-            id: lot.id,
-            userId: lot.userId,
-            marketId: lot.marketId,
-            outcomeIndex: lot.outcomeIndex,
-            shares: lot.shares,
-            committedShares: lot.committedShares,
-            stake: lot.stake,
-            status: lot.status
-          }
-        })
-      );
-    }
-    const newPrincipal = sumCommitDecimals(principals);
-
-    const existing = await tx.legStake.findUnique({
-      where: { legId_userId: { legId: input.legId, userId: input.userId } }
-    });
-
-    const totalShares = sumCommitDecimals([existing?.shares.toString() ?? "0", newShares]);
-    const totalAmount = sumCommitDecimals([existing?.amount.toString() ?? "0", newPrincipal]);
-    const totalCommittedPrincipal = sumCommitDecimals([
-      existing?.committedPrincipal.toString() ?? "0",
-      newPrincipal
-    ]);
-    const averageEntryPrice = divideCommitDecimals(totalAmount, totalShares);
-
-    const stake = existing
-      ? await tx.legStake.update({
-          where: { id: existing.id },
-          data: {
-            shares: totalShares,
-            committedPrincipal: totalCommittedPrincipal,
-            amount: totalAmount,
-            averageEntryPrice,
-            status: "ACTIVE"
-          }
-        })
-      : await tx.legStake.create({
-          data: {
-            legId: input.legId,
-            userId: input.userId,
-            shares: totalShares,
-            committedPrincipal: newPrincipal,
-            amount: newPrincipal,
-            averageEntryPrice,
-            status: "ACTIVE"
-          }
-        });
-
-    for (const commit of input.commitments) {
-      const lot = lotMap.get(commit.positionId)!;
-      const principal = computeCommittedPrincipal({
-        commitment: commit,
-        position: {
-          id: lot.id,
-          userId: lot.userId,
-          marketId: lot.marketId,
-          outcomeIndex: lot.outcomeIndex,
-          shares: lot.shares,
-          committedShares: lot.committedShares,
-          stake: lot.stake,
-          status: lot.status
-        }
-      });
-
-      await tx.legStakeSource.create({
-        data: {
-          stakeId: stake.id,
-          positionId: lot.id,
-          shares: commit.shares,
-          principal
-        }
-      });
-    }
-
-    return {
-      stakeId: stake.id,
+    return commitPositionLotsToLeg(tx, {
       legId: input.legId,
-      amount: stake.amount.toString(),
-      shares: stake.shares.toString(),
-      averageEntryPrice: stake.averageEntryPrice.toString()
-    };
+      userId: input.userId,
+      marketId: leg.market.gammaId,
+      outcomeIndex: leg.outcomeIndex,
+      commitments: input.commitments,
+      stakeStatus: "ACTIVE",
+      positions
+    });
   });
 }
 

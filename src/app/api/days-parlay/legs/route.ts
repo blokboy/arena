@@ -2,15 +2,13 @@ import { NextResponse } from "next/server";
 
 import { RegularParlayDomainError } from "@/domain/parlays";
 import { currentUserFromHeaders } from "@/server/current-user";
-import { addFirstParlayLeg } from "@/server/parlays";
+import { claimDaysParlayMarket } from "@/server/days-parlay";
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request) {
   const user = await currentUserFromHeaders(request.headers);
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
   }
-
-  const { id: parlayId } = await params;
 
   let body: unknown;
   try {
@@ -18,6 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch {
     return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
+
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
@@ -37,49 +36,44 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!Array.isArray(commitments)) {
     return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
   }
-  for (const commit of commitments) {
+
+  for (const commitment of commitments) {
     if (
-      typeof commit !== "object" ||
-      commit === null ||
-      typeof (commit as { positionId?: unknown }).positionId !== "string" ||
-      typeof (commit as { shares?: unknown }).shares !== "string"
+      typeof commitment !== "object" ||
+      commitment === null ||
+      typeof (commitment as { positionId?: unknown }).positionId !== "string" ||
+      typeof (commitment as { shares?: unknown }).shares !== "string"
     ) {
       return NextResponse.json({ error: { code: "INVALID_BODY" } }, { status: 400 });
     }
   }
 
   const errorStatusMap: Record<string, number> = {
-    NO_COMMITMENTS: 400,
-    COMMITMENT_POSITION_NOT_FOUND: 404,
-    COMMITMENT_MARKET_MISMATCH: 422,
+    ACTIVE_LEG_REQUIRED: 409,
     COMMITMENT_EXCEEDS_AVAILABLE_SHARES: 422,
-    MARKET_NOT_FOUND: 404,
+    COMMITMENT_MARKET_MISMATCH: 422,
+    COMMITMENT_POSITION_NOT_FOUND: 404,
+    LEG_APPEND_TOO_EARLY: 422,
+    MARKET_ALREADY_CLAIMED: 409,
     MARKET_CLOSED: 409,
     MARKET_INACTIVE: 409,
-    NOT_A_MEMBER: 403,
-    PARLAY_NOT_FOUND: 404,
+    MARKET_NOT_FOUND: 404,
+    MARKET_OUTSIDE_DAY: 422,
+    NO_COMMITMENTS: 400,
     PARLAY_NOT_ACTIVE: 409,
-    ACTIVE_LEG_REQUIRED: 409,
-    LEG_APPEND_TOO_EARLY: 422
+    POSITION_CONFLICT: 409
   };
 
   try {
-    const result = await addFirstParlayLeg({
+    const result = await claimDaysParlayMarket({
       userId: user.id,
-      parlayId,
       marketId: marketId.trim(),
       outcomeIndex,
       commitments,
       now: new Date()
     });
 
-    return NextResponse.json(
-      {
-        leg: { id: result.legId, status: result.legStatus },
-        parlay: { id: parlayId, status: result.parlayStatus }
-      },
-      { status: 201 }
-    );
+    return NextResponse.json({ data: result }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message in errorStatusMap) {
       const status = errorStatusMap[error.message]!;
@@ -89,6 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { status }
       );
     }
+
     throw error;
   }
 }
