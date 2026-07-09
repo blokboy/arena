@@ -66,6 +66,7 @@ describe("POST /api/positions", () => {
         stake: "250",
         shares: "390.625",
         committedShares: "0",
+        committedSettled: false,
         entryPrice: "0.64",
         purchasedAt: "2026-01-15T12:00:00.000Z"
       },

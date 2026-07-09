@@ -33,6 +33,7 @@ type PositionLotView = {
   marketActive?: boolean;
   marketClosed?: boolean;
   lastSyncedAt?: string;
+  committedSettled?: boolean;
 };
 
 type PositionGroupView = {
@@ -51,6 +52,7 @@ type PositionGroupView = {
   realizedPoints?: string;
   bestBid?: string | null;
   marketClosed?: boolean;
+  committedSettled?: boolean;
 };
 
 type ListedPositionLot = PositionLotView & {

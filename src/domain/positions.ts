@@ -28,6 +28,10 @@ export type PositionLot = {
   purchasedAt: string;
   exitedAt?: string;
   exitPrice?: string;
+  // Flip-not-decrement settlement marker (Position.committedSettled) — true
+  // once every parlay leg this lot's committed shares fed has reached a
+  // terminal status. See docs/prds/points-prediction-market.md Part III §5.
+  committedSettled?: boolean;
 };
 
 export type PositionGroup = {
@@ -42,6 +46,11 @@ export type PositionGroup = {
   committedShares: string;
   availableShares: string;
   averageEntryPrice: string;
+  // True only when the group has committed shares and every lot
+  // contributing committed shares has individually settled — a group with
+  // no committed shares, or with any still-unresolved committed lot, reads
+  // as false (nothing to settle, or not fully settled yet).
+  committedSettled: boolean;
 };
 
 export function calculateBuyQuote(input: BuyQuoteInput): BuyQuote {
@@ -76,7 +85,8 @@ export function groupPositions(lots: PositionLot[]): PositionGroup[] {
         totalShares,
         committedShares: normalizeDecimal(lot.committedShares),
         availableShares: getAvailableShares(lot),
-        averageEntryPrice: averageEntryPriceForGroup([lot], totalStake, totalShares)
+        averageEntryPrice: averageEntryPriceForGroup([lot], totalStake, totalShares),
+        committedSettled: false
       });
       continue;
     }
@@ -93,7 +103,18 @@ export function groupPositions(lots: PositionLot[]): PositionGroup[] {
     );
   }
 
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    committedSettled: computeGroupCommittedSettled(group.lots)
+  }));
+}
+
+function computeGroupCommittedSettled(lots: PositionLot[]): boolean {
+  const committedLots = lots.filter((lot) => parseDecimal(lot.committedShares, "INVALID_COMMITTED_SHARES").value > 0n);
+  if (committedLots.length === 0) {
+    return false;
+  }
+  return committedLots.every((lot) => lot.committedSettled === true);
 }
 
 // A fully sold lot has its remaining shares zeroed out (see

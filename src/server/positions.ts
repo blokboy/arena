@@ -91,7 +91,8 @@ export function createMemoryPositionRepository(
         shares: input.shares,
         committedShares: "0",
         entryPrice: input.entryPrice,
-        purchasedAt: input.purchasedAt
+        purchasedAt: input.purchasedAt,
+        committedSettled: false
       };
       state.lots.push(lot);
       return { ...lot };
@@ -149,6 +150,7 @@ type PrismaPositionRow = {
   stake: { toString(): string };
   shares: { toString(): string };
   committedShares: { toString(): string };
+  committedSettled: boolean;
   status: string;
   exitPrice: { toString(): string } | null;
   exitedAt: Date | null;
@@ -169,6 +171,7 @@ function toStoredLot(row: PrismaPositionRow): StoredPositionLot {
     stake: row.stake.toString(),
     shares: row.shares.toString(),
     committedShares: row.committedShares.toString(),
+    committedSettled: row.committedSettled,
     entryPrice: row.entryPrice.toString(),
     purchasedAt: row.createdAt.toISOString(),
     ...(row.exitedAt ? { exitedAt: row.exitedAt.toISOString() } : {}),

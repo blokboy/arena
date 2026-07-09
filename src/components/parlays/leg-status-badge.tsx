@@ -22,7 +22,13 @@ export type LegStakeStatus =
   | "RESOLVED_WON"
   | "RESOLVED_LOST"
   | "ROLLED_OVER"
-  | "VOIDED_REFUNDED";
+  | "VOIDED_REFUNDED"
+  // The real, shipped LegStake.status enum uses WON/LOST (confirmed by
+  // Backend for issue #11 — see docs/prds/points-prediction-market.md
+  // Part III §5) rather than the PRD's RESOLVED_WON/RESOLVED_LOST — both
+  // render identically here, same convention as LegStatus above.
+  | "WON"
+  | "LOST";
 
 type StatusConfig = {
   label: string;

@@ -225,6 +225,9 @@ export type RegularParlayDetailLeg = {
     shares: string;
     averageEntryPrice: string;
     status: string;
+    payout: string;
+    rolledForwardFromLegId: string | null;
+    rolledForwardToLegId: string | null;
   }>;
   memberVoteTally:
     | {
@@ -271,6 +274,8 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
               shares: true,
               averageEntryPrice: true,
               status: true,
+              payout: true,
+              rolledForwardFromLegId: true,
               user: { select: { id: true, username: true } }
             }
           },
@@ -297,7 +302,7 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
       userId: member.userId,
       username: member.user.username
     })),
-    legs: parlay.legs.map((leg) => {
+    legs: parlay.legs.map((leg, legIndex) => {
       const tally = tallyMemberRolloverVote({
         memberIds,
         stakes: leg.stakes.map((stake) => ({
@@ -306,6 +311,7 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
         })),
         votes: Object.fromEntries(leg.votes.map((vote) => [vote.userId, vote.value]))
       });
+      const nextLeg = parlay.legs[legIndex + 1];
 
       return {
         id: leg.id,
@@ -324,7 +330,16 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
           amount: stake.amount.toString(),
           shares: stake.shares.toString(),
           averageEntryPrice: stake.averageEntryPrice.toString(),
-          status: stake.status
+          status: stake.status,
+          payout: stake.payout.toString(),
+          rolledForwardFromLegId: stake.rolledForwardFromLegId,
+          rolledForwardToLegId:
+            nextLeg?.stakes.find(
+              (nextStake) =>
+                nextStake.rolledForwardFromLegId === leg.id && nextStake.user.id === stake.user.id
+            ) !== undefined
+              ? nextLeg!.id
+              : null
         })),
         memberVoteTally:
           tally.totalMemberStake === 0
@@ -794,4 +809,5 @@ export async function clearParlayData(): Promise<void> {
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayMember" CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "ParlayLeg" CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Parlay" CASCADE`);
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "HouseTransaction" CASCADE`);
 }

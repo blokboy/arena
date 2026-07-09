@@ -98,6 +98,86 @@ describe("portfolio position grouping", () => {
     expect(getAvailableShares({ shares: "200", committedShares: "25" })).toBe("175");
     expect(calculateSellValue({ shares: "275", bestBid: "0.61" })).toBe("167.75");
   });
+
+  // Position.committedSettled (flip, not decrement) marks a lot's committed
+  // slice as resolved once every parlay leg it fed has reached a terminal
+  // state — see docs/prds/points-prediction-market.md Part III §5. A group
+  // only reads as settled once every one of its committed lots agrees.
+  it("marks a group's committed shares as settled only once every committed lot in it is settled", () => {
+    const groups = groupPositions([
+      {
+        id: "lot-1",
+        marketId: "market-1",
+        marketQuestion: "Will it rain?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "100",
+        shares: "200",
+        committedShares: "200",
+        entryPrice: "0.5",
+        purchasedAt: "2026-07-06T10:00:00.000Z",
+        committedSettled: true
+      }
+    ]);
+
+    expect(groups[0]?.committedSettled).toBe(true);
+  });
+
+  it("does not mark a group settled while any of its committed lots is still unresolved", () => {
+    const groups = groupPositions([
+      {
+        id: "lot-1",
+        marketId: "market-1",
+        marketQuestion: "Will it rain?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "50",
+        shares: "100",
+        committedShares: "100",
+        entryPrice: "0.5",
+        purchasedAt: "2026-07-06T10:00:00.000Z",
+        committedSettled: true
+      },
+      {
+        id: "lot-2",
+        marketId: "market-1",
+        marketQuestion: "Will it rain?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "50",
+        shares: "100",
+        committedShares: "100",
+        entryPrice: "0.5",
+        purchasedAt: "2026-07-06T11:00:00.000Z",
+        committedSettled: false
+      }
+    ]);
+
+    expect(groups[0]?.committedSettled).toBe(false);
+  });
+
+  it("treats a group with no committed shares as not settled (nothing to settle)", () => {
+    const groups = groupPositions([
+      {
+        id: "lot-1",
+        marketId: "market-1",
+        marketQuestion: "Will it rain?",
+        outcomeIndex: 0,
+        outcomeLabel: "Yes",
+        status: "OPEN",
+        stake: "50",
+        shares: "100",
+        committedShares: "0",
+        entryPrice: "0.5",
+        purchasedAt: "2026-07-06T10:00:00.000Z"
+      }
+    ]);
+
+    expect(groups[0]?.committedSettled).toBe(false);
+  });
 });
 
 describe("buy operation", () => {
@@ -152,6 +232,7 @@ describe("buy operation", () => {
       stake: "250",
       shares: "390.625",
       committedShares: "0",
+      committedSettled: false,
       entryPrice: "0.64",
       purchasedAt: "2026-07-06T12:34:56.000Z"
     });

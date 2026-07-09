@@ -21,6 +21,7 @@ type PositionLotView = {
   purchasedAt: string;
   exitPrice?: string;
   exitedAt?: string;
+  committedSettled?: boolean;
 };
 
 type PositionGroupView = {
@@ -39,6 +40,7 @@ type PositionGroupView = {
   realizedPoints?: string;
   bestBid?: string | null;
   marketClosed?: boolean;
+  committedSettled?: boolean;
 };
 
 type PositionGroupRowProps = {
@@ -128,6 +130,7 @@ export function PositionGroupRow({
               <LockedShareValue
                 availableShares={group.availableShares}
                 lockedShares={group.committedShares}
+                committedSettled={group.committedSettled}
               />
             ) : null}
             <span>

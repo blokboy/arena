@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculatePositionSettlement,
+  calculateParlayLegStakeSettlement,
   detectMarketResolution,
   getUtcGrantDay
 } from "../../src/domain/settlement";
@@ -81,6 +82,93 @@ describe("single-market settlement math", () => {
       status: "VOIDED",
       settledShares: "150",
       payout: "75"
+    });
+  });
+});
+
+describe("parlay leg stake settlement math", () => {
+  it("credits the full payout for a won final leg", () => {
+    expect(
+      calculateParlayLegStakeSettlement({
+        outcomeIndex: 0,
+        isFinalLeg: true,
+        stakeAmount: "80",
+        stakeShares: "120",
+        resolution: detectMarketResolution(resolvedBinaryGammaMarket())
+      })
+    ).toEqual({
+      status: "WON",
+      payout: "120",
+      houseAmount: "0",
+      forwardPrincipal: null
+    });
+  });
+
+  it("rolls a won non-final leg's shares forward instead of crediting balance", () => {
+    expect(
+      calculateParlayLegStakeSettlement({
+        outcomeIndex: 0,
+        isFinalLeg: false,
+        stakeAmount: "80",
+        stakeShares: "120",
+        resolution: detectMarketResolution(resolvedBinaryGammaMarket())
+      })
+    ).toEqual({
+      status: "WON",
+      payout: "0",
+      houseAmount: "0",
+      forwardPrincipal: "120"
+    });
+  });
+
+  it("forfeits the full at-risk amount to HOUSE for a lost leg", () => {
+    expect(
+      calculateParlayLegStakeSettlement({
+        outcomeIndex: 1,
+        isFinalLeg: false,
+        stakeAmount: "80",
+        stakeShares: "120",
+        resolution: detectMarketResolution(resolvedBinaryGammaMarket())
+      })
+    ).toEqual({
+      status: "LOST",
+      payout: "0",
+      houseAmount: "80",
+      forwardPrincipal: null
+    });
+  });
+
+  it("refunds the original at-risk amount for a voided final leg", () => {
+    expect(
+      calculateParlayLegStakeSettlement({
+        outcomeIndex: 0,
+        isFinalLeg: true,
+        stakeAmount: "80",
+        stakeShares: "120",
+        resolution: detectMarketResolution(voidedGammaMarket())
+      })
+    ).toEqual({
+      status: "VOIDED",
+      payout: "80",
+      houseAmount: "0",
+      forwardPrincipal: null
+    });
+  });
+
+  it("passes a voided non-final leg's amount forward at zero return", () => {
+    expect(
+      calculateParlayLegStakeSettlement({
+        outcomeIndex: 0,
+        isFinalLeg: false,
+        stakeAmount: "80",
+        stakeShares: "120",
+        resolution: detectMarketResolution(voidedGammaMarket())
+      })
+    ).toEqual({
+      status: "VOIDED",
+      payout: "0",
+      houseAmount: "0",
+      forwardPrincipal: "80"
     });
   });
 });

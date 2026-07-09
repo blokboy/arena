@@ -15,6 +15,13 @@ type DetailStake = {
   shares: string;
   averageEntryPrice: string;
   status: string;
+  // Settlement-driven fields, additive/optional (see
+  // docs/prds/points-prediction-market.md Part III §5).
+  payout?: string;
+  exitPrice?: string | null;
+  exitedAt?: string | null;
+  rolledForwardFromLegId?: string | null;
+  rolledForwardToLegId?: string | null;
 };
 
 type DetailLeg = {
@@ -116,20 +123,18 @@ export function ParlayDetailClient({ parlayId, currentUserId }: { parlayId: stri
     backerCount: leg.stakes.length,
     bestBid: leg.market.bestBid,
     bestAsk: leg.market.bestAsk,
+    // Only a leg that hasn't resolved yet (still PENDING or currently ACTIVE)
+    // is subject to the no-early-cashout rule. Every terminal leg state —
+    // WON, LOST, ROLLED_OVER, VOIDED — has already left the "locked, at
+    // risk" state one way or another, so the copy would be stale/misleading
+    // there (PRD Part II §2.5).
     warning:
-      leg.status !== "WON" && leg.status !== "LOST" && leg.status !== "VOIDED"
+      leg.status === "PENDING" || leg.status === "ACTIVE"
         ? "Parlay stakes are locked until the final leg resolves."
         : null
   }));
 
-  const activeBackerStakes: LegBackerStake[] =
-    activeLeg?.stakes.map((stake) => ({
-      user: stake.user,
-      amount: stake.amount,
-      shares: stake.shares,
-      averageEntryPrice: stake.averageEntryPrice,
-      status: stake.status as LegBackerStake["status"]
-    })) ?? [];
+  const isTerminalParlay = detail.status === "WON" || detail.status === "LOST" || detail.status === "VOIDED";
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,27 +150,45 @@ export function ParlayDetailClient({ parlayId, currentUserId }: { parlayId: stri
 
       <LegTimeline legs={timelineLegs} />
 
-      {activeLeg ? (
-        <section className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4">
-          <h2 className="text-lg font-medium text-slate-950">Active leg</h2>
-          <LegBackerList stakes={activeBackerStakes} />
-          <RolloverControl memberVoteTally={activeLeg.memberVoteTally} isFinalLeg={isFinalLeg} />
+      {/* One backer breakdown per leg, not just the active one — a
+          settlement-resolved leg's payout/rollforward-link data (PRD Part
+          III §5) has to stay reachable on every leg, not only whichever one
+          happens to be active/final right now. Actionable controls
+          (rollover vote, back-this-leg) stay scoped to the active leg. */}
+      {detail.legs.map((leg) => (
+        <section key={leg.id} className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4">
+          <h2 className="text-lg font-medium text-slate-950">
+            {leg.status === "ACTIVE" ? "Active leg" : leg.market.question}
+          </h2>
+          <LegBackerList stakes={toLegBackerStakes(leg)} />
 
-          <BackActiveLegForm
-            parlayId={parlayId}
-            activeLeg={activeLeg}
-            onCommitted={() => setReloadToken((token) => token + 1)}
-          />
+          {leg.id === activeLeg?.id ? (
+            <>
+              <RolloverControl memberVoteTally={leg.memberVoteTally} isFinalLeg={isFinalLeg} />
+
+              <BackActiveLegForm
+                parlayId={parlayId}
+                activeLeg={leg}
+                onCommitted={() => setReloadToken((token) => token + 1)}
+              />
+            </>
+          ) : null}
         </section>
-      ) : null}
+      ))}
 
-      {isMember ? (
-        <AppendLegSection parlayId={parlayId} onCommitted={() => setReloadToken((token) => token + 1)} />
-      ) : (
-        <p id="append-leg-reason" className="text-xs text-slate-500">
-          Only parlay members can append new legs.
-        </p>
-      )}
+      {/* No early cash-out control exists anywhere in the parlay UI
+          (PRD Part II §2.5) — nothing below intentionally renders a
+          cash-out/sell affordance for parlay stakes, terminal or not. */}
+
+      {!isTerminalParlay ? (
+        isMember ? (
+          <AppendLegSection parlayId={parlayId} onCommitted={() => setReloadToken((token) => token + 1)} />
+        ) : (
+          <p id="append-leg-reason" className="text-xs text-slate-500">
+            Only parlay members can append new legs.
+          </p>
+        )
+      ) : null}
     </div>
   );
 }
@@ -174,6 +197,21 @@ function sumAmounts(stakes: DetailStake[]): string {
   return stakes
     .reduce((total, stake) => total + Number(stake.amount), 0)
     .toString();
+}
+
+function toLegBackerStakes(leg: DetailLeg): LegBackerStake[] {
+  return leg.stakes.map((stake) => ({
+    user: stake.user,
+    amount: stake.amount,
+    shares: stake.shares,
+    averageEntryPrice: stake.averageEntryPrice,
+    status: stake.status as LegBackerStake["status"],
+    payout: stake.payout,
+    exitPrice: stake.exitPrice,
+    exitedAt: stake.exitedAt,
+    rolledForwardFromLegId: stake.rolledForwardFromLegId,
+    rolledForwardToLegId: stake.rolledForwardToLegId
+  }));
 }
 
 function toEligibleLots(lots: PositionLot[], outcomeIndex: number): EligiblePositionLot[] {
