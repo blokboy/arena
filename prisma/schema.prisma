@@ -170,6 +170,8 @@ model LegStake {
   amount             Decimal        @default(0) @db.Decimal(18, 6)
   averageEntryPrice  Decimal        @default(0) @db.Decimal(18, 6)
   status             LegStakeStatus @default(PENDING)
+  exitPrice          Decimal?       @db.Decimal(18, 6)
+  exitedAt           DateTime?
 
   leg     ParlayLeg        @relation(fields: [legId], references: [id])
   user    User             @relation(fields: [userId], references: [id])

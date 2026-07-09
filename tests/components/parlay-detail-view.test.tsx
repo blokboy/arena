@@ -29,6 +29,7 @@ const legs: LegTimelineLeg[] = [
 const activeLeg = {
   id: "leg-active",
   marketQuestion: "Will the Democrat win in 2028?",
+  bestBid: "0.55",
   stakes: [
     {
       user: { id: "alice-id", username: "alice" },
@@ -43,7 +44,13 @@ const activeLeg = {
     yesStake: "0",
     members: [{ userId: "alice-id", username: "alice", amount: "64", sharePct: 1, votingYes: false }]
   },
-  isFinalLeg: false
+  callerStake: {
+    amount: "64",
+    shares: "100",
+    status: "ACTIVE"
+  },
+  isFinalLeg: false,
+  nextLegBestAsk: "0.25"
 };
 
 const backEligibleLot = {
@@ -75,6 +82,7 @@ const baseProps = {
   backEligibleLot,
   onAppend: vi.fn(),
   onBack: vi.fn(),
+  onVoted: vi.fn(),
   appendError: null,
   backError: null
 };

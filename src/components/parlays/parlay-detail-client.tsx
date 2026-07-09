@@ -30,14 +30,27 @@ type DetailLeg = {
   };
   stakes: DetailStake[];
   memberVoteTally: MemberVoteTally;
+  callerStake: {
+    amount: string;
+    shares: string;
+    status: string;
+  } | null;
+  nextLegBestAsk: string | null;
+  isFinalLeg: boolean;
 };
 
 type ParlayDetail = {
   id: string;
   name: string;
   status: string;
+  kind: "REGULAR";
   members: Array<{ userId: string; username: string }>;
   legs: DetailLeg[];
+  caller: {
+    id: string;
+    username: string;
+    isMember: boolean;
+  };
 };
 
 type PositionLot = {
@@ -149,7 +162,17 @@ export function ParlayDetailClient({ parlayId, currentUserId }: { parlayId: stri
         <section className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4">
           <h2 className="text-lg font-medium text-slate-950">Active leg</h2>
           <LegBackerList stakes={activeBackerStakes} />
-          <RolloverControl memberVoteTally={activeLeg.memberVoteTally} isFinalLeg={isFinalLeg} />
+          <RolloverControl
+            parlayId={parlayId}
+            legId={activeLeg.id}
+            currentUserId={currentUserId}
+            memberVoteTally={activeLeg.memberVoteTally}
+            callerStake={activeLeg.callerStake}
+            currentLegMarket={{ bestBid: activeLeg.market.bestBid }}
+            nextLegMarket={{ bestAsk: activeLeg.nextLegBestAsk }}
+            isFinalLeg={isFinalLeg}
+            onVoted={() => setReloadToken((token) => token + 1)}
+          />
 
           <BackActiveLegForm
             parlayId={parlayId}

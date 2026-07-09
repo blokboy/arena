@@ -3,11 +3,12 @@ import {
   type Commitment,
   computeCommittedPrincipal,
   divideCommitDecimals,
+  executeRegularParlayRollover,
   sumCommitDecimals,
   tallyMemberRolloverVote
 } from "@/domain/parlays";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
-import { marketCacheRepository, type MarketCacheRepository } from "@/server/markets";
+import { marketCacheRepository, refreshMarketIfStale, type MarketCacheRepository } from "@/server/markets";
 import { positionRepository, type PositionRepository } from "@/server/positions";
 import { userRepository } from "@/server/users";
 
@@ -205,6 +206,11 @@ export type RegularParlayDetail = {
   status: string;
   members: Array<{ userId: string; username: string }>;
   legs: RegularParlayDetailLeg[];
+  caller: {
+    id: string;
+    username: string;
+    isMember: boolean;
+  };
 };
 
 export type RegularParlayDetailLeg = {
@@ -239,9 +245,19 @@ export type RegularParlayDetailLeg = {
         }>;
       }
     | null;
+  callerStake: {
+    amount: string;
+    shares: string;
+    status: string;
+  } | null;
+  isFinalLeg: boolean;
+  nextLegBestAsk: string | null;
 };
 
-export async function getRegularParlayDetail(parlayId: string): Promise<RegularParlayDetail> {
+export async function getRegularParlayDetail(
+  parlayId: string,
+  callerUserId?: string
+): Promise<RegularParlayDetail> {
   const parlay = await prisma.parlay.findFirst({
     where: { id: parlayId, kind: "REGULAR" },
     select: {
@@ -288,6 +304,9 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
     parlay.members.map((member) => [member.userId, member.user.username] as const)
   );
 
+  const callerUserRecord = parlay.members.find((m) => m.userId === callerUserId);
+  const callerUsername = callerUserRecord?.user.username ?? callerUserId ?? "";
+
   return {
     id: parlay.id,
     name: parlay.name,
@@ -297,7 +316,12 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
       userId: member.userId,
       username: member.user.username
     })),
-    legs: parlay.legs.map((leg) => {
+    caller: {
+      id: callerUserId ?? "",
+      username: callerUsername,
+      isMember: callerUserRecord !== undefined
+    },
+    legs: parlay.legs.map((leg, legIndex) => {
       const tally = tallyMemberRolloverVote({
         memberIds,
         stakes: leg.stakes.map((stake) => ({
@@ -306,6 +330,20 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
         })),
         votes: Object.fromEntries(leg.votes.map((vote) => [vote.userId, vote.value]))
       });
+
+      const isFinalLeg = legIndex >= parlay.legs.length - 1;
+      const nextLegBestAsk = !isFinalLeg
+        ? (parlay.legs[legIndex + 1]?.market.bestAsk?.toString() ?? null)
+        : null;
+
+      const callerStakeRow = leg.stakes.find((s) => s.user.id === callerUserId);
+      const callerStake = callerStakeRow
+        ? {
+            amount: callerStakeRow.amount.toString(),
+            shares: callerStakeRow.shares.toString(),
+            status: callerStakeRow.status
+          }
+        : null;
 
       return {
         id: leg.id,
@@ -339,7 +377,10 @@ export async function getRegularParlayDetail(parlayId: string): Promise<RegularP
                   sharePct: member.sharePct,
                   votingYes: member.votingYes
                 }))
-              }
+              },
+        callerStake,
+        isFinalLeg,
+        nextLegBestAsk
       };
     })
   };
@@ -601,6 +642,29 @@ export async function addFirstParlayLeg(input: {
   });
 }
 
+export type CastRolloverVoteResult = {
+  vote: { legId: string; userId: string; value: boolean };
+  tally: {
+    totalMemberStake: string;
+    yesStake: string;
+    passes: boolean;
+    members: Array<{
+      userId: string;
+      username: string;
+      amount: string;
+      sharePct: number;
+      votingYes: boolean;
+    }>;
+  };
+  didExecuteRollover: boolean;
+  rollover: {
+    currentLegId: string;
+    nextLegId: string | null;
+    exitPrice: string;
+    rollForwardByUser: Record<string, { shares: string; amount: string }>;
+  } | null;
+};
+
 export type ParlayStakeResult = {
   stakeId: string;
   legId: string;
@@ -773,6 +837,297 @@ export async function stakeParlayLeg(input: {
       amount: stake.amount.toString(),
       shares: stake.shares.toString(),
       averageEntryPrice: stake.averageEntryPrice.toString()
+    };
+  });
+}
+
+export async function castRegularParlayRolloverVote(input: {
+  parlayId: string;
+  legId: string;
+  userId: string;
+  vote: boolean;
+  now: Date;
+}): Promise<CastRolloverVoteResult> {
+  return prisma.$transaction(async (tx) => {
+    const parlay = await tx.parlay.findFirst({
+      where: { id: input.parlayId, kind: "REGULAR" },
+      select: {
+        id: true,
+        status: true,
+        members: { select: { userId: true, user: { select: { username: true } } } },
+        legs: {
+          orderBy: [{ resolutionAt: "asc" }, { sortKey: "asc" }],
+          select: {
+            id: true,
+            status: true,
+            resolutionAt: true,
+            sortKey: true,
+            market: {
+              select: {
+                gammaId: true,
+                endDate: true,
+                bestBid: true,
+                bestAsk: true
+              }
+            },
+            stakes: {
+              select: {
+                userId: true,
+                shares: true,
+                amount: true,
+                status: true,
+                user: { select: { username: true } }
+              }
+            },
+            votes: { select: { userId: true, value: true } }
+          }
+        }
+      }
+    });
+    if (!parlay) {
+      throw new Error("PARLAY_NOT_FOUND");
+    }
+    if (parlay.status !== "ACTIVE") {
+      throw new Error("PARLAY_NOT_ACTIVE");
+    }
+
+    const memberUserIds = new Set(parlay.members.map((m) => m.userId));
+    if (!memberUserIds.has(input.userId)) {
+      throw new Error("NOT_A_VOTING_MEMBER");
+    }
+
+    const memberUsernameMap = new Map<string, string>();
+    for (const m of parlay.members) {
+      memberUsernameMap.set(m.userId, m.user.username);
+    }
+
+    const targetLeg = parlay.legs.find((leg) => leg.id === input.legId);
+    if (!targetLeg) {
+      throw new Error("LEG_NOT_FOUND");
+    }
+    if (targetLeg.status !== "ACTIVE") {
+      throw new Error("LEG_NOT_ACTIVE");
+    }
+
+    const callerStake = targetLeg.stakes.find(
+      (stake) => stake.userId === input.userId && stake.status === "ACTIVE"
+    );
+    if (!callerStake) {
+      throw new Error("NOT_A_VOTING_MEMBER");
+    }
+
+    // Acquire an exclusive row lock on this leg before recording the vote or
+    // re-tallying. Without this, two concurrent decisive votes each compute
+    // their tally from a pre-commit snapshot of the other, which can either
+    // lose a jointly-decisive combination (neither transaction sees both
+    // votes) or double-execute the rollover (both see the leg as ACTIVE and
+    // both perform the roll-forward). Serializing here means the second
+    // transaction only proceeds after the first fully commits, at which
+    // point its fresh re-read below reflects the true, current state.
+    await tx.$queryRaw`SELECT id FROM "ParlayLeg" WHERE id = ${input.legId} FOR UPDATE`;
+
+    const lockedLeg = await tx.parlayLeg.findUniqueOrThrow({
+      where: { id: input.legId },
+      select: { status: true }
+    });
+    if (lockedLeg.status !== "ACTIVE") {
+      throw new Error("LEG_NOT_ACTIVE");
+    }
+
+    await tx.rolloverVote.upsert({
+      where: { legId_userId: { legId: input.legId, userId: input.userId } },
+      create: { legId: input.legId, userId: input.userId, value: input.vote },
+      update: { value: input.vote }
+    });
+
+    const freshVotes = await tx.rolloverVote.findMany({
+      where: { legId: input.legId },
+      select: { userId: true, value: true }
+    });
+
+    const freshStakes = await tx.legStake.findMany({
+      where: { legId: input.legId, status: "ACTIVE" },
+      select: {
+        userId: true,
+        shares: true,
+        amount: true,
+        status: true,
+        user: { select: { username: true } }
+      }
+    });
+
+    const votesMap: Record<string, boolean> = {};
+    for (const vote of freshVotes) {
+      votesMap[vote.userId] = vote.value;
+    }
+
+    const tallyInputStakes = freshStakes.map((stake) => ({
+      userId: stake.userId,
+      amount: Number(stake.amount.toString())
+    }));
+
+    const tally = tallyMemberRolloverVote({
+      memberIds: [...memberUserIds],
+      stakes: tallyInputStakes,
+      votes: votesMap
+    });
+
+    if (!tally.passes) {
+      const memberList = tally.members.map((member) => ({
+        userId: member.userId,
+        username: memberUsernameMap.get(member.userId) ?? member.userId,
+        amount: String(member.amount),
+        sharePct: member.sharePct,
+        votingYes: member.votingYes
+      }));
+
+      return {
+        vote: { legId: input.legId, userId: input.userId, value: input.vote },
+        tally: {
+          totalMemberStake: String(tally.totalMemberStake),
+          yesStake: String(tally.yesMemberStake),
+          passes: false,
+          members: memberList
+        },
+        didExecuteRollover: false,
+        rollover: null
+      };
+    }
+
+    const bestBid = targetLeg.market.bestBid;
+    if (!bestBid) {
+      throw new Error("PRICE_UNAVAILABLE");
+    }
+    const bestBidNum = Number(bestBid.toString());
+
+    const nextLeg = parlay.legs.find(
+      (leg, idx) =>
+        idx > parlay.legs.indexOf(targetLeg) && leg.status === "PENDING"
+    );
+    const nextLegBestAsk = nextLeg?.market.bestAsk
+      ? Number(nextLeg.market.bestAsk.toString())
+      : null;
+
+    const stakesWithShares = freshStakes.map((stake) => ({
+      userId: stake.userId,
+      shares: Number(stake.shares.toString()),
+      amount: Number(stake.amount.toString())
+    }));
+
+    const rolloverPlan = executeRegularParlayRollover({
+      legs: parlay.legs.map((leg) => ({
+        id: leg.id,
+        marketId: leg.market.gammaId,
+        outcomeId: "",
+        endDate: leg.market.endDate ?? leg.resolutionAt,
+        gammaId: leg.market.gammaId,
+        status: leg.status as "ACTIVE" | "PENDING" | "LOST",
+        stakes: leg.stakes.map((stake) => ({
+          userId: stake.userId,
+          amount: Number(stake.amount.toString())
+        }))
+      })),
+      legId: input.legId,
+      stakesWithShares,
+      bestBid: bestBidNum,
+      nextLegBestAsk,
+      exitedAt: input.now
+    });
+
+    await tx.parlayLeg.update({
+      where: { id: input.legId },
+      data: { status: "ROLLED_OVER" }
+    });
+
+    for (const stake of freshStakes) {
+      await tx.legStake.update({
+        where: { legId_userId: { legId: input.legId, userId: stake.userId } },
+        data: {
+          status: "ROLLED_OVER",
+          exitPrice: bestBidNum,
+          exitedAt: input.now
+        }
+      });
+    }
+
+    if (nextLeg) {
+      await tx.parlayLeg.update({
+        where: { id: nextLeg.id },
+        data: { status: "ACTIVE" }
+      });
+
+      for (const [userId, forward] of Object.entries(rolloverPlan.rollForwardByUser)) {
+        const existingNextStake = await tx.legStake.findUnique({
+          where: { legId_userId: { legId: nextLeg.id, userId } }
+        });
+
+        const newShares = sumCommitDecimals([
+          existingNextStake?.shares.toString() ?? "0",
+          String(forward.shares)
+        ]);
+        const newAmount = sumCommitDecimals([
+          existingNextStake?.amount.toString() ?? "0",
+          String(forward.amount)
+        ]);
+        const newPrincipal = sumCommitDecimals([
+          existingNextStake?.committedPrincipal.toString() ?? "0",
+          "0"
+        ]);
+        const avgPrice = divideCommitDecimals(newAmount, newShares);
+
+        await tx.legStake.upsert({
+          where: { legId_userId: { legId: nextLeg.id, userId } },
+          create: {
+            legId: nextLeg.id,
+            userId,
+            shares: String(forward.shares),
+            committedPrincipal: "0",
+            amount: String(forward.amount),
+            averageEntryPrice: avgPrice,
+            status: "ACTIVE"
+          },
+          update: {
+            shares: newShares,
+            amount: newAmount,
+            committedPrincipal: newPrincipal,
+            averageEntryPrice: avgPrice,
+            status: "ACTIVE"
+          }
+        });
+      }
+    }
+
+    const memberList = tally.members.map((member) => ({
+      userId: member.userId,
+      username: memberUsernameMap.get(member.userId) ?? member.userId,
+      amount: String(member.amount),
+      sharePct: member.sharePct,
+      votingYes: member.votingYes
+    }));
+
+    const rollForwardByUser: Record<string, { shares: string; amount: string }> = {};
+    for (const [userId, forward] of Object.entries(rolloverPlan.rollForwardByUser)) {
+      rollForwardByUser[userId] = {
+        shares: String(forward.shares),
+        amount: String(forward.amount)
+      };
+    }
+
+    return {
+      vote: { legId: input.legId, userId: input.userId, value: input.vote },
+      tally: {
+        totalMemberStake: String(tally.totalMemberStake),
+        yesStake: String(tally.yesMemberStake),
+        passes: true,
+        members: memberList
+      },
+      didExecuteRollover: true,
+      rollover: {
+        currentLegId: input.legId,
+        nextLegId: nextLeg?.id ?? null,
+        exitPrice: String(bestBidNum),
+        rollForwardByUser
+      }
     };
   });
 }

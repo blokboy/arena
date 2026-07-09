@@ -21,7 +21,9 @@ describe("error code vocabulary", () => {
         "MARKET_ALREADY_CLAIMED",
         "VOTE_ALREADY_SPENT",
         "ROLLOVER_CAP_REACHED",
-        "INSUFFICIENT_BALANCE"
+        "INSUFFICIENT_BALANCE",
+        "NOT_A_VOTING_MEMBER",
+        "UNAUTHENTICATED"
       ])
     );
   });
@@ -53,8 +55,8 @@ describe("route auth & validation (need route handlers — api tier)", () => {
     "POST /api/days-parlay/legs/:legId/rollover-vote → ROLLOVER_CAP_REACHED once rolloverCount = 3"
   );
   it.todo("any stake/buy over balance → INSUFFICIENT_BALANCE");
-  it.todo(
-    "POST /api/parlays/:id/legs/:legId/rollover-vote from a non-member → 403 NOT_A_VOTING_MEMBER"
-  );
+  // Covered by tests/api/parlay-rollover-vote-route.test.ts:
+  //   403 NOT_A_VOTING_MEMBER (non-member, member-without-stake),
+  //   404 LEG_NOT_FOUND, 401 UNAUTHENTICATED, 400 INVALID_BODY
   it.todo("does not expose HouseAccount.balance outside /api/days-parlay");
 });
