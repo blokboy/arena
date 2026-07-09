@@ -28,6 +28,24 @@ enum ParlayStatus {
   VOIDED
 }
 
+enum LegStatus {
+  PENDING
+  ACTIVE
+  WON
+  LOST
+  ROLLED_OVER
+  VOIDED
+}
+
+enum LegStakeStatus {
+  PENDING
+  ACTIVE
+  WON
+  LOST
+  ROLLED_OVER
+  VOIDED_REFUNDED
+}
+
 model User {
   id             String   @id @default(cuid())
   username       String   @unique
@@ -132,7 +150,7 @@ model ParlayLeg {
   outcomeIndex Int
   resolutionAt DateTime
   sortKey      String
-  status       String   @default("PENDING")
+  status       LegStatus @default(PENDING)
   createdAt    DateTime @default(now())
 
   parlay Parlay       @relation(fields: [parlayId], references: [id])
@@ -144,17 +162,21 @@ model ParlayLeg {
 }
 
 model LegStake {
-  id                 String  @id @default(cuid())
+  id                 String         @id @default(cuid())
   legId              String
   userId             String
-  shares             Decimal @db.Decimal(18, 6)
-  committedPrincipal Decimal @db.Decimal(18, 6)
+  shares             Decimal        @db.Decimal(18, 6)
+  committedPrincipal Decimal        @db.Decimal(18, 6)
+  amount             Decimal        @default(0) @db.Decimal(18, 6)
+  averageEntryPrice  Decimal        @default(0) @db.Decimal(18, 6)
+  status             LegStakeStatus @default(PENDING)
 
   leg     ParlayLeg        @relation(fields: [legId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
   sources LegStakeSource[]
 
   @@unique([legId, userId])
+  @@index([legId, status])
 }
 
 model LegStakeSource {

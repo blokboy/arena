@@ -67,7 +67,7 @@ async function seedParlay(input: {
     outcomeIndex: number;
     resolutionAt: Date;
     sortKey: string;
-    status?: string;
+    status?: "PENDING" | "ACTIVE" | "WON" | "LOST" | "ROLLED_OVER" | "VOIDED";
   }>;
 }) {
   const parlay = await prisma.parlay.create({
@@ -107,7 +107,7 @@ describe("listRandomParlays", () => {
       outcomeIndex: 0,
       resolutionAt: new Date("2028-11-08T00:00:00.000Z"),
       sortKey: "1|leg",
-      status: "ACTIVE"
+      status: "ACTIVE" as const
     };
 
     const eligible = await seedParlay({
@@ -137,7 +137,7 @@ describe("listRandomParlays", () => {
       outcomeIndex: 0,
       resolutionAt: new Date("2028-11-08T00:00:00.000Z"),
       sortKey: "1|leg",
-      status: "ACTIVE"
+      status: "ACTIVE" as const
     };
 
     for (let index = 0; index < 5; index += 1) {

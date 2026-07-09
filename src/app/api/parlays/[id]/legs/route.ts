@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { RegularParlayDomainError } from "@/domain/parlays";
 import { currentUserFromHeaders } from "@/server/current-user";
 import { addFirstParlayLeg } from "@/server/parlays";
 
@@ -54,7 +55,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     COMMITMENT_EXCEEDS_AVAILABLE_SHARES: 422,
     NOT_A_MEMBER: 403,
     PARLAY_NOT_FOUND: 404,
-    PARLAY_NOT_DRAFT: 409
+    PARLAY_NOT_ACTIVE: 409,
+    ACTIVE_LEG_REQUIRED: 409,
+    LEG_APPEND_TOO_EARLY: 422
   };
 
   try {
@@ -77,7 +80,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     if (error instanceof Error && error.message in errorStatusMap) {
       const status = errorStatusMap[error.message]!;
-      return NextResponse.json({ error: { code: error.message } }, { status });
+      const details = error instanceof RegularParlayDomainError ? error.details : undefined;
+      return NextResponse.json(
+        { error: { code: error.message, ...(details ? { details } : {}) } },
+        { status }
+      );
     }
     throw error;
   }

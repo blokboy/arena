@@ -259,7 +259,11 @@ describe("POST /api/parlays/:id/legs (first leg)", () => {
     await expect(response.json()).resolves.toEqual({ error: { code: "NOT_A_MEMBER" } });
   });
 
-  test("rejects seeding a first leg twice once the parlay is already ACTIVE", async () => {
+  test("rejects re-adding the same market as leg 2 once ACTIVE — it can't resolve later than itself", async () => {
+    // Once a parlay is ACTIVE, a second POST to this route is no longer a
+    // rejected "not a draft" call — it's a real append attempt (issue #9).
+    // Re-submitting the exact same market fails append-ordering validation
+    // instead, since it can't resolve strictly after the leg it already is.
     const marketId = await seedCachedMarket();
     const alice = await userRepository.createUser({ username: "alice", passwordHash: "hashed" });
     const positionA = await seedPosition({
@@ -299,8 +303,12 @@ describe("POST /api/parlays/:id/legs (first leg)", () => {
     );
     const secondResponse = await createLeg(second.request, second.context);
 
-    expect(secondResponse.status).toBe(409);
-    await expect(secondResponse.json()).resolves.toEqual({ error: { code: "PARLAY_NOT_DRAFT" } });
+    expect(secondResponse.status).toBe(422);
+    const body = (await secondResponse.json()) as {
+      error: { code: string; details?: { activeLegEndDate: string; attemptedMarketEndDate: string } };
+    };
+    expect(body.error.code).toBe("LEG_APPEND_TOO_EARLY");
+    expect(body.error.details?.activeLegEndDate).toBe(body.error.details?.attemptedMarketEndDate);
   });
 
   test("rejects an unknown parlay id with 404", async () => {

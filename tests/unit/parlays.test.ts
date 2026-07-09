@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendRegularParlayLeg,
+  assertLegResolvesAfterActiveLeg,
   computeCommittedPrincipal,
   createRegularParlay,
+  divideCommitDecimals,
   getChronologicalLegs,
   settleRegularParlayLoss,
   sumCommitDecimals,
@@ -87,6 +89,36 @@ describe("regular parlays", () => {
     ).toThrow("LEG_APPEND_TOO_EARLY");
   });
 
+  it("rejects an append whose market resolves before or at the active leg, with structured details", () => {
+    let error: unknown;
+
+    try {
+      assertLegResolvesAfterActiveLeg(
+        date("2028-11-08T00:00:00.000Z"),
+        date("2028-11-07T00:00:00.000Z")
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "LEG_APPEND_TOO_EARLY",
+      details: {
+        activeLegEndDate: "2028-11-08T00:00:00.000Z",
+        attemptedMarketEndDate: "2028-11-07T00:00:00.000Z"
+      }
+    });
+  });
+
+  it("accepts an append whose market resolves strictly after the active leg", () => {
+    expect(() =>
+      assertLegResolvesAfterActiveLeg(
+        date("2028-11-08T00:00:00.000Z"),
+        date("2028-11-09T00:00:00.000Z")
+      )
+    ).not.toThrow();
+  });
+
   it("returns legs in chronological order by end date then gamma id", () => {
     const sorted = getChronologicalLegs([
       {
@@ -135,7 +167,11 @@ describe("regular parlays", () => {
     expect(exactlyHalf).toEqual({
       totalMemberStake: 100,
       yesMemberStake: 50,
-      passes: false
+      passes: false,
+      members: [
+        { userId: "alice", amount: 50, sharePct: 0.5, votingYes: true },
+        { userId: "bob", amount: 50, sharePct: 0.5, votingYes: false }
+      ]
     });
 
     const overHalf = tallyMemberRolloverVote({
@@ -151,7 +187,11 @@ describe("regular parlays", () => {
     expect(overHalf).toEqual({
       totalMemberStake: 100,
       yesMemberStake: 51,
-      passes: true
+      passes: true,
+      members: [
+        { userId: "alice", amount: 51, sharePct: 0.51, votingYes: true },
+        { userId: "bob", amount: 49, sharePct: 0.49, votingYes: false }
+      ]
     });
   });
 
@@ -335,6 +375,22 @@ describe("committed principal computation", () => {
       }
     });
     expect(result).toBe("250");
+  });
+});
+
+describe("divideCommitDecimals", () => {
+  it("divides two same-scale decimal strings", () => {
+    expect(divideCommitDecimals("100", "50")).toBe("2");
+  });
+
+  it("aligns differing scales before dividing instead of dividing raw values", () => {
+    // 10 / 100.5 ≈ 0.0995 — dividing the raw unaligned BigInt values (10n / 1005n)
+    // would silently be off by a factor of the scale difference.
+    expect(divideCommitDecimals("10", "100.5")).toBe("0.099502");
+  });
+
+  it("returns 0 when dividing by zero instead of throwing", () => {
+    expect(divideCommitDecimals("50", "0")).toBe("0");
   });
 });
 
