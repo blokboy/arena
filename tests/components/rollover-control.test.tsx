@@ -100,6 +100,54 @@ describe("RolloverControl", () => {
     expect(onVoted).toHaveBeenCalledTimes(1);
   });
 
+  test('opens the non-decisive "add your vote" copy when the caller alone would not cross 50%', async () => {
+    const threeWayTally: MemberVoteTally = {
+      totalMemberStake: "100",
+      yesStake: "0",
+      members: [
+        { userId: "alice-id", username: "alice", amount: "50", sharePct: 0.5, votingYes: false },
+        { userId: "bob-id", username: "bob", amount: "30", sharePct: 0.3, votingYes: false },
+        { userId: "chris-id", username: "chris", amount: "20", sharePct: 0.2, votingYes: false }
+      ]
+    };
+
+    render(
+      <RolloverControl
+        {...baseProps}
+        currentUserId="bob-id"
+        memberVoteTally={threeWayTally}
+        callerStake={{ amount: "30", shares: "50", status: "ACTIVE" }}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("switch", { name: "Vote to roll over" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Confirm rollover vote" });
+    expect(dialog).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Add your vote (30% of member stake) toward the 50% needed?")
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(/your vote alone will trigger this rollover/i)
+    ).not.toBeInTheDocument();
+  });
+
+  test("does not violate the Rules of Hooks when the same instance transitions from a null render to the full control", () => {
+    // RolloverControl's early `if (isFinalLeg || !memberVoteTally) return null`
+    // sits before its hooks are declared. In production, the same component
+    // instance re-renders across leg transitions (isFinalLeg flipping, or a
+    // tally arriving after an initial null fetch) at one stable call site, so
+    // this transition must not change how many hooks the instance calls.
+    const { rerender } = render(<RolloverControl {...baseProps} isFinalLeg />);
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+
+    expect(() => rerender(<RolloverControl {...baseProps} isFinalLeg={false} />)).not.toThrow();
+    expect(screen.getByRole("switch", { name: "Vote to roll over" })).toBeInTheDocument();
+
+    expect(() => rerender(<RolloverControl {...baseProps} memberVoteTally={null} />)).not.toThrow();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
   test("renders a disabled-with-reason control for a non-voter", () => {
     render(
       <RolloverControl
