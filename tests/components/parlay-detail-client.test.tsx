@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import { ParlayDetailClient } from "@/components/parlays/parlay-detail-client";
@@ -157,9 +158,7 @@ describe("ParlayDetailClient — settlement-driven terminal states", () => {
       name: "Late Slate",
       status: "LOST",
       members: [{ userId: "alice-id", username: "alice" }],
-      legs: [
-        { ...baseLeg, id: "leg-1", status: "LOST", stakes: [] }
-      ]
+      legs: [{ ...baseLeg, id: "leg-1", status: "LOST", stakes: [] }]
     });
 
     render(<ParlayDetailClient parlayId="parlay-1" currentUserId="alice-id" />);
@@ -426,5 +425,100 @@ describe("ParlayDetailClient — real settlement field values from the backend",
 
     const forwardLink = screen.getByRole("link", { name: /carried forward/i });
     expect(forwardLink).toHaveAttribute("href", "#leg-leg-2");
+  });
+});
+
+describe("ParlayDetailClient — append a leg from portfolio holdings", () => {
+  test("derives the appended leg's market/outcome from a chosen holding, not typed-in ids", async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ url: string; body?: unknown }> = [];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
+      calls.push({ url, body: init?.body ? JSON.parse(init.body as string) : undefined });
+
+      if (url.includes("/api/parlays/parlay-1") && !url.includes("/legs")) {
+        return jsonResponse({
+          data: {
+            id: "parlay-1",
+            name: "July ladder",
+            status: "ACTIVE",
+            members: [{ userId: "mira-id", username: "mira" }],
+            legs: [
+              {
+                ...baseLeg,
+                id: "leg-1",
+                status: "ACTIVE",
+                stakes: [
+                  {
+                    user: { id: "mira-id", username: "mira" },
+                    amount: "64",
+                    shares: "100",
+                    averageEntryPrice: "0.64",
+                    status: "ACTIVE"
+                  }
+                ]
+              }
+            ]
+          }
+        });
+      }
+
+      if (url.endsWith("/api/positions")) {
+        return jsonResponse({
+          positions: [
+            {
+              id: "lot-2",
+              marketId: "market-senate-2028",
+              marketQuestion: "Will Democrats control the Senate after 2028?",
+              outcomeIndex: 0,
+              outcomeLabel: "Yes",
+              status: "OPEN",
+              stake: "10",
+              shares: "15.625",
+              committedShares: "0",
+              entryPrice: "0.64",
+              purchasedAt: "2026-07-08T11:00:00.000Z"
+            }
+          ]
+        });
+      }
+
+      if (url.endsWith("/api/parlays/parlay-1/legs")) {
+        expect(init?.method).toBe("POST");
+        return jsonResponse({ leg: { id: "leg-2", status: "PENDING" } }, 201);
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    render(<ParlayDetailClient parlayId="parlay-1" currentUserId="mira-id" />);
+    await waitFor(() => expect(screen.getByText("July ladder")).toBeInTheDocument());
+
+    // The append form must offer the member's own holdings to choose from —
+    // no raw "Market id"/"Outcome index" text inputs anywhere.
+    expect(screen.queryByLabelText("Market id")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Outcome index")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("Will Democrats control the Senate after 2028?")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Yes · 15.625 shares available/)).toBeInTheDocument();
+
+    const appendSection = screen.getByText("Append a leg").closest("section")!;
+    await user.click(within(appendSection).getByRole("button", { name: "Choose" }));
+    await user.type(await screen.findByLabelText(/lot-2|0\.64/i), "15.625");
+    await user.click(within(appendSection).getByRole("button", { name: "Append leg" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.endsWith("/api/parlays/parlay-1/legs"))).toBe(true)
+    );
+
+    const legCall = calls.find((call) => call.url.endsWith("/api/parlays/parlay-1/legs"))!;
+    expect(legCall.body).toEqual({
+      marketId: "market-senate-2028",
+      outcomeIndex: 0,
+      commitments: [{ positionId: "lot-2", shares: "15.625" }]
+    });
   });
 });
