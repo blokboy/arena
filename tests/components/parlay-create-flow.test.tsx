@@ -17,7 +17,11 @@ vi.mock("next/navigation", () => ({
   })
 }));
 
-function mockFlowFetch(options?: { emptyEligibleLots?: boolean; failLegCreate?: boolean }) {
+// Leg 1 must be seeded from a market/outcome the creator already holds
+// shares in — the flow fetches the creator's own portfolio (GET
+// /api/positions, no marketId) once, derives a "holdings" list from it
+// client-side, and never lets the creator browse the wider market catalog.
+function mockFlowFetch(options?: { emptyHoldings?: boolean; failLegCreate?: boolean }) {
   const calls: string[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -25,48 +29,13 @@ function mockFlowFetch(options?: { emptyEligibleLots?: boolean; failLegCreate?: 
       typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
     calls.push(url);
 
-    if (url.includes("/api/markets?category=politics")) {
-      return jsonResponse({
-        events: [
-          {
-            gammaId: "event-1",
-            category: "Politics",
-            title: "Election",
-            slug: "election",
-            volume: "1000",
-            lastSyncedAt: "2026-07-08T12:00:00.000Z",
-            markets: [
-              {
-                gammaId: "market-1",
-                eventGammaId: "event-1",
-                eventTitle: "Election",
-                category: "Politics",
-                question: "Will a Democrat win the 2028 election?",
-                slug: "democrat-2028",
-                outcomes: ["Yes", "No"],
-                outcomePrices: ["0.56", "0.44"],
-                bestBid: "0.54",
-                bestAsk: "0.56",
-                lastTradePrice: "0.55",
-                active: true,
-                closed: false,
-                endDate: "2028-11-08T00:00:00.000Z",
-                volume: "1000",
-                lastSyncedAt: "2026-07-08T12:00:00.000Z"
-              }
-            ]
-          }
-        ]
-      });
-    }
-
     if (url.includes("/api/users?query=bo")) {
       return jsonResponse({ users: [{ id: "user_2", username: "bob" }] });
     }
 
-    if (url.includes("/api/positions?marketId=market-1")) {
+    if (url.endsWith("/api/positions")) {
       return jsonResponse({
-        positions: options?.emptyEligibleLots
+        positions: options?.emptyHoldings
           ? []
           : [
               {
@@ -76,9 +45,10 @@ function mockFlowFetch(options?: { emptyEligibleLots?: boolean; failLegCreate?: 
                 outcomeIndex: 0,
                 outcomeLabel: "Yes",
                 status: "OPEN",
-                entryPrice: "0.56",
-                availableShares: "120",
+                stake: "50",
+                shares: "120",
                 committedShares: "0",
+                entryPrice: "0.56",
                 purchasedAt: "2026-07-08T11:00:00.000Z"
               }
             ]
@@ -113,7 +83,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe("ParlayCreateFlow", () => {
-  test("creates the draft parlay, then leg 1, then redirects to /parlays", async () => {
+  test("derives the first-leg market/outcome from the creator's own holdings, not a market browser", async () => {
     const user = userEvent.setup();
     const calls = mockFlowFetch();
 
@@ -124,12 +94,20 @@ describe("ParlayCreateFlow", () => {
     await user.click(await screen.findByRole("button", { name: /add bob/i }));
     await user.click(screen.getByRole("button", { name: "Continue to first leg" }));
 
-    await user.click(await screen.findByRole("button", { name: "Choose market" }));
+    // The held market/outcome appears as a holding to choose from — no
+    // category tabs, no market browse list, no separate outcome picker.
+    expect(await screen.findByText("Will a Democrat win the 2028 election?")).toBeInTheDocument();
+    expect(screen.getByText(/Yes · 120 shares available/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Market categories")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Outcome" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Choose" }));
     await user.type(await screen.findByLabelText(/lot-1|0\.56/i), "50");
     await user.click(screen.getByRole("button", { name: "Create parlay" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Commit shares to leg 1?" });
     expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText(/Will a Democrat win the 2028 election?/)).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Create parlay" }));
 
@@ -147,7 +125,7 @@ describe("ParlayCreateFlow", () => {
 
     await user.type(screen.getByLabelText("Parlay name"), "Retry ladder");
     await user.click(screen.getByRole("button", { name: "Continue to first leg" }));
-    await user.click(await screen.findByRole("button", { name: "Choose market" }));
+    await user.click(await screen.findByRole("button", { name: "Choose" }));
     await user.type(await screen.findByLabelText(/lot-1|0\.56/i), "50");
     await user.click(screen.getByRole("button", { name: "Create parlay" }));
     const dialog = await screen.findByRole("dialog", { name: "Commit shares to leg 1?" });
@@ -161,26 +139,22 @@ describe("ParlayCreateFlow", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  test("shows the no-eligible-lots empty state when nothing can be committed", async () => {
+  test("shows a neutral empty state pointing to /markets when the creator holds nothing yet", async () => {
     const user = userEvent.setup();
-    mockFlowFetch({ emptyEligibleLots: true });
+    mockFlowFetch({ emptyHoldings: true });
 
     render(<ParlayCreateFlow currentUser={{ id: "user_1", username: "mira" }} />);
 
     await user.type(screen.getByLabelText("Parlay name"), "Empty ladder");
     await user.click(screen.getByRole("button", { name: "Continue to first leg" }));
-    await user.click(await screen.findByRole("button", { name: "Choose market" }));
 
-    expect(
-      await screen.findByText("No eligible open lots are available for this outcome.")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("You don't hold any open positions yet.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Buy a position" })).toHaveAttribute(
       "href",
       "/markets"
     );
-    expect(screen.getByRole("link", { name: "Review your portfolio" })).toHaveAttribute(
-      "href",
-      "/portfolio"
-    );
+    expect(
+      screen.getByText("Choose one of your holdings above before committing shares.")
+    ).toBeInTheDocument();
   });
 });

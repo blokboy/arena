@@ -15,12 +15,11 @@ import type {
 } from "@/components/parlays/types";
 import { WizardStepIndicator } from "@/components/parlays/wizard-step-indicator";
 import {
-  CATEGORY_TAGS,
-  MARKET_CATEGORIES,
-  type CachedEvent,
-  type CachedMarket,
-  type MarketCategory
-} from "@/domain/markets";
+  getAvailableShares,
+  groupPositions,
+  type PositionGroup,
+  type PositionLot
+} from "@/domain/positions";
 import { cn } from "@/lib/cn";
 
 type ParlayCreateFlowProps = {
@@ -37,8 +36,15 @@ type DraftResume = {
 };
 
 type SearchStatus = "idle" | "loading" | "success" | "error";
-type MarketStatus = "loading" | "success" | "error";
+type HoldingsStatus = "loading" | "success" | "error";
 type Step = "roster" | "first-leg";
+
+type SelectedHolding = {
+  marketId: string;
+  marketQuestion: string;
+  outcomeIndex: number;
+  outcomeLabel: string;
+};
 
 export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
   const router = useRouter();
@@ -50,12 +56,9 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
   const [searchResults, setSearchResults] = useState<ParlayUserSearchResult[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<ParlayRosterMember[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<MarketCategory>("Politics");
-  const [marketStatus, setMarketStatus] = useState<MarketStatus>("loading");
-  const [events, setEvents] = useState<CachedEvent[]>([]);
-  const [selectedMarket, setSelectedMarket] = useState<CachedMarket | null>(null);
-  const [selectedOutcomeIndex, setSelectedOutcomeIndex] = useState<number | null>(null);
-  const [eligibleLots, setEligibleLots] = useState<EligiblePositionLot[]>([]);
+  const [holdingsStatus, setHoldingsStatus] = useState<HoldingsStatus>("loading");
+  const [ownedLots, setOwnedLots] = useState<PositionLot[]>([]);
+  const [selectedHolding, setSelectedHolding] = useState<SelectedHolding | null>(null);
   const [selectedCommitments, setSelectedCommitments] = useState<SelectedCommitments>({});
   const [draftId, setDraftId] = useState<string | null>(null);
   const [savedDraft, setSavedDraft] = useState<DraftResume | null>(null);
@@ -131,71 +134,20 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
     };
   }, [currentUser.id, searchQuery, selectedMembers]);
 
+  // Leg 1 must be seeded from a market/outcome the creator already holds —
+  // fetch their own portfolio once, rather than letting them browse the
+  // full market catalog and pick anything.
   useEffect(() => {
     let active = true;
 
-    setMarketStatus("loading");
-    fetch(`/api/markets?category=${CATEGORY_TAGS[selectedCategory].slug}`)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("MARKETS_REQUEST_FAILED");
-        }
-
-        const body = (await response.json()) as { events?: CachedEvent[] };
-        return body.events ?? [];
-      })
-      .then((nextEvents) => {
-        if (!active) {
-          return;
-        }
-
-        setEvents(nextEvents);
-        setMarketStatus("success");
-      })
-      .catch(() => {
-        if (!active) {
-          return;
-        }
-
-        setEvents([]);
-        setMarketStatus("error");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [selectedCategory]);
-
-  useEffect(() => {
-    if (!selectedMarket || selectedOutcomeIndex === null) {
-      setEligibleLots([]);
-      setSelectedCommitments({});
-      return;
-    }
-
-    let active = true;
-
-    fetch(`/api/positions?marketId=${encodeURIComponent(selectedMarket.gammaId)}`)
+    setHoldingsStatus("loading");
+    fetch("/api/positions")
       .then(async (response) => {
         if (!response.ok) {
           throw new Error("POSITIONS_REQUEST_FAILED");
         }
 
-        const body = (await response.json()) as {
-          positions?: Array<{
-            id: string;
-            marketId: string;
-            marketQuestion: string;
-            outcomeIndex: number;
-            outcomeLabel: string;
-            status: string;
-            entryPrice: string;
-            availableShares: string;
-            committedShares: string;
-            purchasedAt: string;
-          }>;
-        };
-
+        const body = (await response.json()) as { positions?: PositionLot[] };
         return body.positions ?? [];
       })
       .then((positions) => {
@@ -203,41 +155,65 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
           return;
         }
 
-        setEligibleLots(
-          positions
-            .filter(
-              (position) =>
-                position.status === "OPEN" &&
-                position.outcomeIndex === selectedOutcomeIndex &&
-                Number(position.availableShares) > 0
-            )
-            .map((position) => ({
-              positionId: position.id,
-              marketId: position.marketId,
-              marketQuestion: position.marketQuestion,
-              outcomeIndex: position.outcomeIndex,
-              outcomeLabel: position.outcomeLabel,
-              entryPrice: position.entryPrice,
-              availableShares: position.availableShares,
-              committedShares: position.committedShares,
-              purchasedAt: position.purchasedAt
-            }))
-        );
-        setSelectedCommitments({});
+        setOwnedLots(positions);
+        setHoldingsStatus("success");
       })
       .catch(() => {
         if (!active) {
           return;
         }
 
-        setEligibleLots([]);
-        setSelectedCommitments({});
+        setOwnedLots([]);
+        setHoldingsStatus("error");
       });
 
     return () => {
       active = false;
     };
-  }, [selectedMarket, selectedOutcomeIndex]);
+  }, []);
+
+  // One "holding" per distinct (market, outcome) the creator has open,
+  // available shares in — this is what they choose leg 1 from.
+  const holdings = useMemo<PositionGroup[]>(
+    () =>
+      groupPositions(ownedLots).filter(
+        (group) => group.status === "OPEN" && Number(group.availableShares) > 0
+      ),
+    [ownedLots]
+  );
+
+  const eligibleLots = useMemo<EligiblePositionLot[]>(() => {
+    if (!selectedHolding) {
+      return [];
+    }
+
+    return ownedLots
+      .filter(
+        (lot) =>
+          lot.status === "OPEN" &&
+          lot.marketId === selectedHolding.marketId &&
+          lot.outcomeIndex === selectedHolding.outcomeIndex
+      )
+      .map((lot) => ({
+        positionId: lot.id,
+        marketId: lot.marketId,
+        marketQuestion: lot.marketQuestion,
+        outcomeIndex: lot.outcomeIndex,
+        outcomeLabel: lot.outcomeLabel,
+        entryPrice: lot.entryPrice,
+        availableShares: getAvailableShares({
+          shares: lot.shares,
+          committedShares: lot.committedShares
+        }),
+        committedShares: lot.committedShares,
+        purchasedAt: lot.purchasedAt
+      }))
+      .filter((lot) => Number(lot.availableShares) > 0);
+  }, [ownedLots, selectedHolding]);
+
+  useEffect(() => {
+    setSelectedCommitments({});
+  }, [selectedHolding]);
 
   const selectedCommitmentEntries = useMemo(
     () =>
@@ -281,13 +257,8 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
   }
 
   function validateFirstLeg(): boolean {
-    if (!selectedMarket) {
-      setFirstLegError("Choose a market to seed leg 1.");
-      return false;
-    }
-
-    if (selectedOutcomeIndex === null) {
-      setFirstLegError("Choose an outcome before committing shares.");
+    if (!selectedHolding) {
+      setFirstLegError("Choose one of your holdings to seed leg 1.");
       return false;
     }
 
@@ -314,7 +285,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
   }
 
   async function submitParlay() {
-    if (!validateFirstLeg() || !selectedMarket || selectedOutcomeIndex === null) {
+    if (!validateFirstLeg() || !selectedHolding) {
       return;
     }
 
@@ -359,8 +330,8 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          marketId: selectedMarket.gammaId,
-          outcomeIndex: selectedOutcomeIndex,
+          marketId: selectedHolding.marketId,
+          outcomeIndex: selectedHolding.outcomeIndex,
           commitments: selectedCommitmentEntries.map(([positionId, shares]) => ({
             positionId,
             shares
@@ -485,7 +456,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
               <p className="text-sm font-semibold text-slate-500">Step 2 of 2</p>
               <h2 className="mt-1 text-xl font-semibold text-slate-950">First leg</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Choose the market and outcome, then lock existing shares from eligible lots.
+                Choose one of your existing holdings, then lock shares from its eligible lots.
               </p>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -500,158 +471,79 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
           </div>
 
           <section className="space-y-4">
-            <div className="overflow-x-auto pb-1">
-              <div className="flex min-w-max gap-2" aria-label="Market categories">
-                {MARKET_CATEGORIES.map((category) => (
-                  <button
-                    aria-pressed={selectedCategory === category}
-                    className={cn(
-                      "min-h-11 rounded-md border px-3 py-2 text-sm font-medium transition",
-                      selectedCategory === category
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
-                    )}
-                    disabled={isSubmitting}
-                    key={category}
-                    onClick={() => setSelectedCategory(category)}
-                    type="button"
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {marketStatus === "loading" ? (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                Loading markets…
-              </div>
-            ) : null}
-
-            {marketStatus === "error" ? (
-              <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-                Markets could not be loaded right now.
-              </p>
-            ) : null}
-
-            {marketStatus === "success" && events.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                No cached {selectedCategory} events are available yet.
-              </div>
-            ) : null}
-
-            {marketStatus === "success" && events.length > 0 ? (
-              <div className="space-y-3">
-                {events.map((event) => (
-                  <article className="rounded-md border border-slate-200" key={event.gammaId}>
-                    <div className="border-b border-slate-200 px-4 py-3">
-                      <h3 className="font-medium text-slate-950">{event.title}</h3>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Volume {event.volume} · Synced {formatDateTime(event.lastSyncedAt)}
-                      </p>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {event.markets.map((market) => {
-                        const selected = selectedMarket?.gammaId === market.gammaId;
-                        const unavailable =
-                          market.closed || !market.active || market.bestAsk === null;
-
-                        return (
-                          <div
-                            className={cn(
-                              "grid gap-3 px-4 py-4 lg:grid-cols-[1fr_auto] lg:items-center",
-                              selected && "bg-slate-50"
-                            )}
-                            key={market.gammaId}
-                          >
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium text-slate-950">{market.question}</p>
-                                {market.closed ? (
-                                  <span className="rounded-sm bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                                    Closed
-                                  </span>
-                                ) : null}
-                              </div>
-                              <p className="mt-2 text-sm text-slate-600">
-                                {market.outcomes.map((outcome, index) => (
-                                  <span
-                                    key={`${market.gammaId}-${outcome}`}
-                                    className="mr-3 inline-block"
-                                  >
-                                    {outcome} {formatPercent(market.outcomePrices[index])}
-                                  </span>
-                                ))}
-                              </p>
-                              <p className="mt-2 text-xs text-slate-500">
-                                Buy at {market.bestAsk ?? "n/a"} · Sell at {market.bestBid ?? "n/a"}{" "}
-                                · Resolves {formatDate(market.endDate)}
-                              </p>
-                            </div>
-                            <button
-                              className="min-h-11 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isSubmitting || unavailable}
-                              onClick={() => {
-                                setSelectedMarket(market);
-                                setSelectedOutcomeIndex(market.outcomes.length === 2 ? 0 : null);
-                                setFirstLegError(null);
-                              }}
-                              type="button"
-                            >
-                              {selected ? "Selected" : "Choose market"}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-          </section>
-
-          <section className="space-y-3">
             <div>
-              <h3 className="text-sm font-medium text-slate-950">Outcome</h3>
+              <h3 className="text-sm font-medium text-slate-950">Choose from your holdings</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Choose the same outcome you already hold in your portfolio.
+                Leg 1 must be seeded from a market and outcome you already hold open shares in — it
+                is not a new trade.
               </p>
             </div>
 
-            {selectedMarket ? (
-              <div
-                aria-label="Outcome"
-                className={
-                  selectedMarket.outcomes.length === 2 ? "grid grid-cols-2 gap-2" : "space-y-2"
-                }
-                role="group"
-              >
-                {selectedMarket.outcomes.map((outcome, index) => (
-                  <button
-                    aria-pressed={selectedOutcomeIndex === index}
-                    className={cn(
-                      "min-h-11 rounded-md border px-3 py-2 text-sm font-medium transition",
-                      selectedOutcomeIndex === index
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
-                    )}
-                    disabled={isSubmitting}
-                    key={`${selectedMarket.gammaId}-${outcome}`}
-                    onClick={() => {
-                      setSelectedOutcomeIndex(index);
-                      setFirstLegError(null);
-                    }}
-                    type="button"
-                  >
-                    {outcome} · {formatPercent(selectedMarket.outcomePrices[index])}
-                  </button>
-                ))}
+            {holdingsStatus === "loading" ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                Loading your holdings…
               </div>
-            ) : (
-              <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                Choose a market above before picking the outcome.
+            ) : null}
+
+            {holdingsStatus === "error" ? (
+              <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                Your holdings could not be loaded right now.
               </p>
-            )}
+            ) : null}
+
+            {holdingsStatus === "success" && holdings.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                <p>You don&apos;t hold any open positions yet.</p>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  <Link className="font-medium text-primary underline" href="/markets">
+                    Buy a position
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+
+            {holdingsStatus === "success" && holdings.length > 0 ? (
+              <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                {holdings.map((holding) => {
+                  const selected =
+                    selectedHolding?.marketId === holding.marketId &&
+                    selectedHolding?.outcomeIndex === holding.outcomeIndex;
+
+                  return (
+                    <div
+                      className={cn(
+                        "grid gap-3 px-4 py-4 lg:grid-cols-[1fr_auto] lg:items-center",
+                        selected && "bg-slate-50"
+                      )}
+                      key={`${holding.marketId}:${holding.outcomeIndex}`}
+                    >
+                      <div>
+                        <p className="font-medium text-slate-950">{holding.marketQuestion}</p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {holding.outcomeLabel} · {holding.availableShares} shares available
+                        </p>
+                      </div>
+                      <button
+                        className="min-h-11 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={isSubmitting}
+                        onClick={() => {
+                          setSelectedHolding({
+                            marketId: holding.marketId,
+                            marketQuestion: holding.marketQuestion,
+                            outcomeIndex: holding.outcomeIndex,
+                            outcomeLabel: holding.outcomeLabel
+                          });
+                          setFirstLegError(null);
+                        }}
+                        type="button"
+                      >
+                        {selected ? "Selected" : "Choose"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </section>
 
           <section className="space-y-3">
@@ -659,7 +551,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
               <div>
                 <h3 className="text-sm font-medium text-slate-950">Eligible lots</h3>
                 <p className="mt-1 text-sm text-slate-600">
-                  Only open lots on the selected outcome with available shares can be committed.
+                  Only open lots on the selected holding with available shares can be committed.
                 </p>
               </div>
               <div className="text-sm text-slate-500">
@@ -667,18 +559,10 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
               </div>
             </div>
 
-            {selectedMarket && selectedOutcomeIndex !== null && eligibleLots.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                <p>No eligible open lots are available for this outcome.</p>
-                <div className="mt-2 flex flex-wrap gap-3">
-                  <Link className="font-medium text-primary underline" href="/markets">
-                    Buy a position
-                  </Link>
-                  <Link className="font-medium text-primary underline" href="/portfolio">
-                    Review your portfolio
-                  </Link>
-                </div>
-              </div>
+            {!selectedHolding ? (
+              <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                Choose one of your holdings above before committing shares.
+              </p>
             ) : (
               <EligiblePositionCommitSelector
                 disabled={isSubmitting}
@@ -735,7 +619,7 @@ export function ParlayCreateFlow({ currentUser }: ParlayCreateFlowProps) {
 
       <ParlayCommitConfirmDialog
         cancelLabel="Cancel"
-        commitmentSummary={`Commit ${formatShares(selectedCommitmentSummary.totalShares)} shares across ${selectedCommitmentSummary.lots} lot${selectedCommitmentSummary.lots === 1 ? "" : "s"} into ${selectedMarket?.question ?? "the selected market"}${selectedOutcomeIndex !== null && selectedMarket ? ` (${selectedMarket.outcomes[selectedOutcomeIndex]})` : ""}.`}
+        commitmentSummary={`Commit ${formatShares(selectedCommitmentSummary.totalShares)} shares across ${selectedCommitmentSummary.lots} lot${selectedCommitmentSummary.lots === 1 ? "" : "s"} into ${selectedHolding?.marketQuestion ?? "the selected holding"}${selectedHolding ? ` (${selectedHolding.outcomeLabel})` : ""}.`}
         confirmLabel={draftId ? "Finish activating parlay" : "Create parlay"}
         errorMessage={firstLegError}
         houseRiskCopy="If an earlier leg fails before this one is reached, this commitment is lost to HOUSE."
@@ -815,38 +699,6 @@ function getLegErrorMessage(errorCode?: string): string {
   }
 
   return "The first leg could not be created. Your draft is saved so you can retry.";
-}
-
-function formatPercent(value: string | undefined): string {
-  if (!value) {
-    return "n/a";
-  }
-
-  const [integerPart, fractionPart = ""] = value.split(".");
-  const scaled = `${integerPart}${fractionPart.padEnd(2, "0").slice(0, 2)}`;
-  const percent = scaled.replace(/^0+(?=\d)/, "") || "0";
-  return `${percent}%`;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "unknown";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date(value));
 }
 
 function formatShares(value: number): string {
