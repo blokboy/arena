@@ -49,6 +49,12 @@ export type RolloverVoteTally = Readonly<{
   totalMemberStake: number;
   yesMemberStake: number;
   passes: boolean;
+  members: readonly Readonly<{
+    userId: UserId;
+    amount: number;
+    sharePct: number;
+    votingYes: boolean;
+  }>[];
 }>;
 
 export type HouseTransaction = Readonly<{
@@ -90,9 +96,25 @@ export class RegularParlayDomainError extends Error {
       | "POSITION_NOT_OPEN"
       | "POSITION_WRONG_MARKET"
       | "POSITION_WRONG_OUTCOME"
-      | "INSUFFICIENT_AVAILABLE_SHARES"
+      | "INSUFFICIENT_AVAILABLE_SHARES",
+    public readonly details?: Readonly<{
+      activeLegEndDate?: string;
+      attemptedMarketEndDate?: string;
+    }>
   ) {
     super(code);
+  }
+}
+
+export function assertLegResolvesAfterActiveLeg(
+  activeLegEndDate: Date,
+  attemptedMarketEndDate: Date
+): void {
+  if (attemptedMarketEndDate.getTime() <= activeLegEndDate.getTime()) {
+    throw new RegularParlayDomainError("LEG_APPEND_TOO_EARLY", {
+      activeLegEndDate: activeLegEndDate.toISOString(),
+      attemptedMarketEndDate: attemptedMarketEndDate.toISOString()
+    });
   }
 }
 
@@ -183,6 +205,28 @@ export function sumCommitDecimals(values: readonly string[]): string {
   return formatCommitDecimal({ value: total, scale: maxScale });
 }
 
+export function divideCommitDecimals(numerator: string, denominator: string): string {
+  const num = parseCommitDecimal(numerator);
+  const den = parseCommitDecimal(denominator);
+
+  if (den.value === 0n) {
+    return "0";
+  }
+
+  // Align both operands to the same scale before dividing as integers —
+  // dividing the raw BigInt values directly would skew the ratio whenever
+  // the two inputs have different decimal-fraction lengths.
+  const alignedScale = Math.max(num.scale, den.scale);
+  const numAligned = num.value * 10n ** BigInt(alignedScale - num.scale);
+  const denAligned = den.value * 10n ** BigInt(alignedScale - den.scale);
+
+  const precision = 6;
+  return formatCommitDecimal({
+    value: (numAligned * 10n ** BigInt(precision)) / denAligned,
+    scale: precision
+  });
+}
+
 function parseCommitDecimal(input: string): { value: bigint; scale: number } {
   const normalized = input.trim();
   const [integerPart = "0", fractionPart = ""] = normalized.split(".");
@@ -245,9 +289,7 @@ export function appendRegularParlayLeg(
     throw new RegularParlayDomainError("ACTIVE_LEG_REQUIRED");
   }
 
-  if (input.endDate.getTime() <= activeLeg.endDate.getTime()) {
-    throw new RegularParlayDomainError("LEG_APPEND_TOO_EARLY");
-  }
+  assertLegResolvesAfterActiveLeg(activeLeg.endDate, input.endDate);
 
   return freezeParlay({
     ...parlay,
@@ -295,18 +337,30 @@ export function tallyMemberRolloverVote(input: {
   let totalMemberStake = 0;
   let yesMemberStake = 0;
 
-  for (const [userId, amount] of memberStakeByUser) {
+  for (const [, amount] of memberStakeByUser) {
     totalMemberStake += amount;
+  }
 
-    if (input.votes[userId] === true) {
+  const members = [...memberStakeByUser.entries()].map(([userId, amount]) => {
+    const votingYes = input.votes[userId] === true;
+
+    if (votingYes) {
       yesMemberStake += amount;
     }
-  }
+
+    return {
+      userId,
+      amount,
+      sharePct: totalMemberStake === 0 ? 0 : amount / totalMemberStake,
+      votingYes
+    };
+  });
 
   return {
     totalMemberStake,
     yesMemberStake,
-    passes: yesMemberStake > totalMemberStake / 2
+    passes: yesMemberStake > totalMemberStake / 2,
+    members: Object.freeze(members.map((member) => Object.freeze(member)))
   };
 }
 

@@ -415,7 +415,7 @@ describe("addFirstParlayLeg", () => {
     ).rejects.toThrow("NOT_A_MEMBER");
   });
 
-  test("rejects seeding a first leg twice on the same parlay once it's already ACTIVE", async () => {
+  test("rejects re-adding the same market as leg 2 once ACTIVE — it can't resolve later than itself (issue #9)", async () => {
     const marketId = await seedCachedMarket();
     const alice = await userRepository.createUser({ username: "alice", passwordHash: "hashed" });
     const positionA = await seedPosition({
@@ -454,7 +454,7 @@ describe("addFirstParlayLeg", () => {
         commitments: [{ positionId: positionB.id, shares: "10" }],
         now: new Date("2026-07-06T13:05:00.000Z")
       })
-    ).rejects.toThrow("PARLAY_NOT_DRAFT");
+    ).rejects.toThrow("LEG_APPEND_TOO_EARLY");
   });
 
   test("rejects an unknown parlay id", async () => {
