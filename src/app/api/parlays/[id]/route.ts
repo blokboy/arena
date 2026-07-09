@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id: parlayId } = await params;
 
   try {
-    const data = await getRegularParlayDetail(parlayId);
+    const data = await getRegularParlayDetail(parlayId, user.id);
     return NextResponse.json({ data });
   } catch (error) {
     if (error instanceof Error && error.message === "PARLAY_NOT_FOUND") {
