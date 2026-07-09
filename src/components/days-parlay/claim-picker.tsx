@@ -22,24 +22,37 @@ export function ClaimPicker({ eligibleEvents, onClaimed }: ClaimPickerProps) {
   const [error, setError] = useState<ClaimError | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const hasClaimableMarkets = eligibleEvents.some((event) =>
+  const hasAnyEligibleMarkets = eligibleEvents.some((event) =>
+    event.markets.some((m) => m.claimStatus === "available")
+  );
+  const hasOwnedHoldings = eligibleEvents.some((event) =>
     event.markets.some((m) => m.claimStatus === "available" && m.myAvailableLots.length > 0)
   );
+  // With no shares in anything eligible today, there's nothing to scope the
+  // picker to — fall back to browsing every eligible market so the user can
+  // see what's resolving today and go buy into one before claiming it.
+  const browsingWithoutHoldings = hasAnyEligibleMarkets && !hasOwnedHoldings;
 
-  if (!hasClaimableMarkets) {
+  if (!hasAnyEligibleMarkets) {
     return (
       <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600">
-        No markets in your portfolio are eligible to claim right now — buy shares in a
-        today-resolving market first, then claim it here.
+        No markets are eligible for today&apos;s Day&apos;s Parlay right now.
       </p>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {browsingWithoutHoldings ? (
+        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+          You don&apos;t have shares in any of today&apos;s eligible markets yet. Here&apos;s what&apos;s
+          resolving today — buy shares in one, then come back here to claim it.
+        </p>
+      ) : null}
+
       {eligibleEvents.map((event) => {
         const availableMarkets = event.markets.filter(
-          (m) => m.claimStatus === "available" && m.myAvailableLots.length > 0
+          (m) => m.claimStatus === "available" && (browsingWithoutHoldings || m.myAvailableLots.length > 0)
         );
         if (availableMarkets.length === 0) return null;
 

@@ -76,7 +76,7 @@ describe("ClaimPicker", () => {
     vi.restoreAllMocks();
   });
 
-  test("shows empty state when no markets are available to claim", () => {
+  test("shows empty state when no markets are eligible at all", () => {
     const eventsWithNoAvailable: DaysParlayEligibleEvent[] = [
       {
         eventId: "event-1",
@@ -89,11 +89,35 @@ describe("ClaimPicker", () => {
     render(<ClaimPicker eligibleEvents={eventsWithNoAvailable} onClaimed={vi.fn()} />);
 
     expect(
-      screen.getByText(/no markets in your portfolio are eligible to claim/i)
+      screen.getByText(/no markets are eligible for today.s day.s parlay/i)
     ).toBeInTheDocument();
   });
 
-  test("hides an available market the caller holds no shares in", () => {
+  test("hides an available market the caller holds no shares in when they hold shares elsewhere", () => {
+    const noHoldingsMarket = {
+      ...availableMarket,
+      marketId: "market-4",
+      gammaId: "gamma-4",
+      question: "Market with no owned shares?",
+      myAvailableLots: []
+    };
+    const eventsWithMixedHoldings: DaysParlayEligibleEvent[] = [
+      {
+        eventId: "event-1",
+        title: "Weather Events",
+        category: "weather",
+        markets: [availableMarket, noHoldingsMarket]
+      }
+    ];
+
+    render(<ClaimPicker eligibleEvents={eventsWithMixedHoldings} onClaimed={vi.fn()} />);
+
+    expect(screen.getByText("Will it rain tomorrow?")).toBeInTheDocument();
+    expect(screen.queryByText("Market with no owned shares?")).not.toBeInTheDocument();
+    expect(screen.queryByText(/you don.t have shares in any/i)).not.toBeInTheDocument();
+  });
+
+  test("falls back to browsing every eligible market when the caller holds no shares anywhere", () => {
     const noHoldingsMarket = {
       ...availableMarket,
       marketId: "market-4",
@@ -112,10 +136,9 @@ describe("ClaimPicker", () => {
 
     render(<ClaimPicker eligibleEvents={eventsWithNoHoldings} onClaimed={vi.fn()} />);
 
-    expect(screen.queryByText("Market with no owned shares?")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/no markets in your portfolio are eligible to claim/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/you don.t have shares in any/i)).toBeInTheDocument();
+    expect(screen.getByText("Market with no owned shares?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /claim/i })).toBeInTheDocument();
   });
 
   test("renders available markets grouped by event", () => {
