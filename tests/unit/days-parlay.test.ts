@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   castDaysParlayRolloverVote,
+  freshPrincipalByUser,
   claimDaysParlayLeg,
   createDaysParlay,
+  resolvesWithinUtcDay,
   settleDaysParlayFailure,
   settleDaysParlaySuccess,
+  totalFreshPrincipal,
+  utcDayBounds,
   utcDayKey
 } from "../../src/domain/days-parlay";
 
@@ -13,6 +17,19 @@ describe("utcDayKey", () => {
   it("uses the UTC calendar day instead of the viewer's local day", () => {
     expect(utcDayKey(new Date("2026-07-06T23:59:59.999Z"))).toBe("2026-07-06");
     expect(utcDayKey(new Date("2026-07-07T00:00:00.000Z"))).toBe("2026-07-07");
+  });
+
+  it("builds UTC day boundaries with an exclusive end", () => {
+    expect(utcDayBounds(new Date("2026-07-06T12:00:00.000-05:00"))).toEqual({
+      start: new Date("2026-07-06T00:00:00.000Z"),
+      end: new Date("2026-07-07T00:00:00.000Z")
+    });
+    expect(resolvesWithinUtcDay(new Date("2026-07-06T23:59:59.999Z"), new Date("2026-07-06"))).toBe(
+      true
+    );
+    expect(resolvesWithinUtcDay(new Date("2026-07-07T00:00:00.000Z"), new Date("2026-07-06"))).toBe(
+      false
+    );
   });
 });
 
@@ -150,6 +167,35 @@ describe("castDaysParlayRolloverVote", () => {
 });
 
 describe("Day's Parlay settlement", () => {
+  it("aggregates fresh principal without double-counting rolled-forward stake", () => {
+    const day = createDaysParlay("2026-07-06", {
+      legs: [
+        {
+          gammaId: "gamma-1",
+          id: "leg-1",
+          marketId: "market-1",
+          resolvesAt: new Date("2026-07-06T16:00:00.000Z"),
+          stakes: [
+            { amount: 260, freshPrincipal: 100, userId: "ada" },
+            { amount: 140, freshPrincipal: 300, userId: "grace" }
+          ],
+          votes: []
+        },
+        {
+          gammaId: "gamma-2",
+          id: "leg-2",
+          marketId: "market-2",
+          resolvesAt: new Date("2026-07-06T18:00:00.000Z"),
+          stakes: [{ amount: 500, freshPrincipal: 0, userId: "ada" }],
+          votes: []
+        }
+      ]
+    });
+
+    expect(freshPrincipalByUser(day)).toEqual({ ada: 100, grace: 300 });
+    expect(totalFreshPrincipal(day)).toBe(400);
+  });
+
   it("splits a successful HOUSE bonus by fresh committed principal only", () => {
     const day = createDaysParlay("2026-07-06", {
       legs: [

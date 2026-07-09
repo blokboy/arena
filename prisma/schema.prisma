@@ -61,6 +61,7 @@ model User {
   legStakes      LegStake[]
   rolloverVotes  RolloverVote[]
   stipendGrants  BankruptcyStipendGrant[]
+  claimedParlayLegs ParlayLeg[]      @relation("ClaimedParlayLegs")
 }
 
 model CachedEvent {
@@ -132,6 +133,8 @@ model Parlay {
   creator User?          @relation("CreatedParlays", fields: [creatorId], references: [id])
   members ParlayMember[]
   legs    ParlayLeg[]
+
+  @@unique([kind, dayKey])
 }
 
 model ParlayMember {
@@ -148,6 +151,7 @@ model ParlayLeg {
   id           String    @id @default(cuid())
   parlayId     String
   marketId     String
+  claimedByUserId String?
   outcomeIndex Int
   resolutionAt DateTime
   sortKey      String
@@ -156,6 +160,7 @@ model ParlayLeg {
 
   parlay                      Parlay         @relation(fields: [parlayId], references: [id])
   market                      CachedMarket   @relation(fields: [marketId], references: [id])
+  claimedByUser               User?          @relation("ClaimedParlayLegs", fields: [claimedByUserId], references: [id])
   stakes                      LegStake[]
   votes                       RolloverVote[]
   stakesRolledForwardFromHere LegStake[]     @relation("RolledForwardStakes")

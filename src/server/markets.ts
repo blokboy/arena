@@ -7,6 +7,7 @@ import {
   type CachedMarket,
   type MarketCategory
 } from "@/domain/markets";
+import { utcDayBounds } from "@/domain/days-parlay";
 import { prisma, shouldUseRealDatabase } from "@/server/db";
 import {
   gammaClient,
@@ -22,6 +23,7 @@ import {
 export type MarketCacheRepository = {
   upsertCategoryEvents(input: { category: MarketCategory; events: CachedEvent[] }): Promise<void>;
   listEventsByCategory(category: MarketCategory): Promise<CachedEvent[]>;
+  listEventsResolvingOnUtcDay(day: Date): Promise<CachedEvent[]>;
   findMarketByGammaId(gammaId: string): Promise<CachedMarket | undefined>;
   upsertMarket(market: CachedMarket): Promise<void>;
   clear(): Promise<void>;
@@ -55,6 +57,41 @@ export function createMemoryMarketCacheRepository(
         ...event,
         markets: event.markets.map((market) => ({ ...market }))
       }));
+    },
+    async listEventsResolvingOnUtcDay(day) {
+      const { start, end } = utcDayBounds(day);
+      const events = new Map<string, CachedEvent>();
+
+      for (const [category, categoryEvents] of state.eventsByCategory.entries()) {
+        for (const event of categoryEvents) {
+          const markets = event.markets
+            .filter((market) => {
+              if (!market.endDate) {
+                return false;
+              }
+
+              const endDate = new Date(market.endDate).getTime();
+              return endDate >= start.getTime() && endDate < end.getTime();
+            })
+            .sort(compareCachedMarkets)
+            .map((market) => ({ ...market }));
+
+          if (markets.length === 0) {
+            continue;
+          }
+
+          const key = `${category}:${event.gammaId}`;
+          events.set(key, {
+            ...event,
+            category,
+            markets
+          });
+        }
+      }
+
+      return [...events.values()].sort((left, right) =>
+        left.title.localeCompare(right.title, undefined, { sensitivity: "base" })
+      );
     },
     async findMarketByGammaId(gammaId) {
       for (const events of state.eventsByCategory.values()) {
@@ -204,6 +241,35 @@ export function createPrismaMarketCacheRepository(): MarketCacheRepository {
       });
       return rows.map(toDomainEvent);
     },
+    async listEventsResolvingOnUtcDay(day) {
+      const { start, end } = utcDayBounds(day);
+      const rows = await prisma.cachedEvent.findMany({
+        where: {
+          category: { in: [...MARKET_CATEGORIES] },
+          markets: {
+            some: {
+              endDate: {
+                gte: start,
+                lt: end
+              }
+            }
+          }
+        },
+        include: {
+          markets: {
+            where: {
+              endDate: {
+                gte: start,
+                lt: end
+              }
+            },
+            orderBy: [{ endDate: "asc" }, { gammaId: "asc" }]
+          }
+        },
+        orderBy: [{ category: "asc" }, { title: "asc" }]
+      });
+      return rows.map(toDomainEvent);
+    },
     async findMarketByGammaId(gammaId) {
       const row = await prisma.cachedMarket.findUnique({
         where: { gammaId },
@@ -251,6 +317,17 @@ export const TOP_VOLUME_MARKET_DISCOVERY: GammaDiscoveryOptions = {
   order: "volume",
   ascending: false,
   limit: 10
+};
+
+export const DAYS_PARLAY_MARKET_DISCOVERY: Omit<
+  GammaDiscoveryOptions,
+  "offset" | "endDateMin" | "endDateMax"
+> = {
+  active: true,
+  closed: false,
+  order: "endDate",
+  ascending: true,
+  limit: 200
 };
 
 let configuredGammaClient: GammaClient = gammaClient;
@@ -308,6 +385,69 @@ export async function syncAllMarketCategories(input: {
         now: input.now,
         repository: input.repository
       });
+      syncedCategories.push(category);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message === "GAMMA_RATE_LIMITED" || error.message === "GAMMA_REMOTE_RATE_LIMITED")
+      ) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return { syncedCategories };
+}
+
+export async function syncDaysParlayEligibleMarkets(input: {
+  gammaClient?: GammaClient;
+  now: Date;
+  repository?: MarketCacheRepository;
+}) {
+  const repository = input.repository ?? marketCacheRepository;
+  const client = input.gammaClient ?? configuredGammaClient;
+  const { start, end } = utcDayBounds(input.now);
+  const syncedCategories: MarketCategory[] = [];
+
+  for (const category of MARKET_CATEGORIES) {
+    try {
+      let offset = 0;
+
+      for (;;) {
+        const events = await client.fetchEventsByTag(
+          getCategoryTag(category).tagId,
+          {
+            ...DAYS_PARLAY_MARKET_DISCOVERY,
+            offset,
+            endDateMin: start.toISOString(),
+            endDateMax: end.toISOString()
+          },
+          { purpose: "cron" }
+        );
+
+        if (events.length === 0) {
+          break;
+        }
+
+        await repository.upsertCategoryEvents({
+          category,
+          events: events.map((event) =>
+            normalizeGammaEvent(event, {
+              category,
+              lastSyncedAt: input.now.toISOString()
+            })
+          )
+        });
+
+        if (events.length < DAYS_PARLAY_MARKET_DISCOVERY.limit) {
+          break;
+        }
+
+        offset += DAYS_PARLAY_MARKET_DISCOVERY.limit;
+      }
+
       syncedCategories.push(category);
     } catch (error) {
       if (
@@ -383,4 +523,10 @@ export async function refreshMarketIfStale(input: {
 
   inFlightMarketRefreshes.set(input.market.gammaId, refreshPromise);
   return refreshPromise;
+}
+
+function compareCachedMarkets(left: CachedMarket, right: CachedMarket): number {
+  const leftEnd = left.endDate ? new Date(left.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+  const rightEnd = right.endDate ? new Date(right.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+  return leftEnd === rightEnd ? left.gammaId.localeCompare(right.gammaId) : leftEnd - rightEnd;
 }
