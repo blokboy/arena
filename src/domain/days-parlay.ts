@@ -86,6 +86,19 @@ export function utcDayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function utcDayBounds(date: Date): { start: Date; end: Date } {
+  const dayKey = utcDayKey(date);
+  const start = new Date(`${dayKey}T00:00:00.000Z`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1_000);
+  return { start, end };
+}
+
+export function resolvesWithinUtcDay(date: Date, day: Date): boolean {
+  const bounds = utcDayBounds(day);
+  const timestamp = date.getTime();
+  return timestamp >= bounds.start.getTime() && timestamp < bounds.end.getTime();
+}
+
 export function createDaysParlay(
   dayKey: string,
   options: CreateDaysParlayOptions = {}
@@ -246,7 +259,7 @@ function distinctBackerIds(leg: DaysParlayLeg): Set<string> {
   return new Set(leg.stakes.map((stake) => stake.userId));
 }
 
-function freshPrincipalByUser(parlay: DaysParlay): Record<string, number> {
+export function freshPrincipalByUser(parlay: DaysParlay): Record<string, number> {
   const principalByUser: Record<string, number> = {};
 
   for (const stake of parlay.legs.flatMap((leg) => leg.stakes)) {
@@ -254,6 +267,10 @@ function freshPrincipalByUser(parlay: DaysParlay): Record<string, number> {
   }
 
   return principalByUser;
+}
+
+export function totalFreshPrincipal(parlay: DaysParlay): number {
+  return sum(Object.values(freshPrincipalByUser(parlay)));
 }
 
 function sum(values: number[]): number {
