@@ -916,6 +916,24 @@ export async function castRegularParlayRolloverVote(input: {
       throw new Error("NOT_A_VOTING_MEMBER");
     }
 
+    // Acquire an exclusive row lock on this leg before recording the vote or
+    // re-tallying. Without this, two concurrent decisive votes each compute
+    // their tally from a pre-commit snapshot of the other, which can either
+    // lose a jointly-decisive combination (neither transaction sees both
+    // votes) or double-execute the rollover (both see the leg as ACTIVE and
+    // both perform the roll-forward). Serializing here means the second
+    // transaction only proceeds after the first fully commits, at which
+    // point its fresh re-read below reflects the true, current state.
+    await tx.$queryRaw`SELECT id FROM "ParlayLeg" WHERE id = ${input.legId} FOR UPDATE`;
+
+    const lockedLeg = await tx.parlayLeg.findUniqueOrThrow({
+      where: { id: input.legId },
+      select: { status: true }
+    });
+    if (lockedLeg.status !== "ACTIVE") {
+      throw new Error("LEG_NOT_ACTIVE");
+    }
+
     await tx.rolloverVote.upsert({
       where: { legId_userId: { legId: input.legId, userId: input.userId } },
       create: { legId: input.legId, userId: input.userId, value: input.vote },
