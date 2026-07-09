@@ -19,9 +19,16 @@ type EligibleLot = {
 type ActiveLegDetail = {
   id: string;
   marketQuestion: string;
+  bestBid: string | null;
   stakes: LegBackerStake[];
   memberVoteTally: MemberVoteTally;
+  callerStake: {
+    amount: string;
+    shares: string;
+    status: string;
+  } | null;
   isFinalLeg: boolean;
+  nextLegBestAsk: string | null;
 };
 
 type ParlayDetailViewProps = {
@@ -37,6 +44,7 @@ type ParlayDetailViewProps = {
   backEligibleLot: EligibleLot | null;
   onAppend: (input: { positionId: string; shares: string }) => void;
   onBack: (input: { positionId: string; shares: string }) => void;
+  onVoted?: () => void;
   appendError: AppendLegFormError | null;
   backError: BackLegFormError | null;
 };
@@ -50,6 +58,7 @@ export function ParlayDetailView({
   backEligibleLot,
   onAppend,
   onBack,
+  onVoted,
   appendError,
   backError
 }: ParlayDetailViewProps) {
@@ -72,7 +81,17 @@ export function ParlayDetailView({
       {activeLeg ? (
         <section className="flex flex-col gap-4">
           <LegBackerList stakes={activeLeg.stakes} />
-          <RolloverControl memberVoteTally={activeLeg.memberVoteTally} isFinalLeg={activeLeg.isFinalLeg} />
+          <RolloverControl
+            parlayId={parlay.id}
+            legId={activeLeg.id}
+            currentUserId={currentUserId}
+            memberVoteTally={activeLeg.memberVoteTally}
+            callerStake={activeLeg.callerStake}
+            currentLegMarket={{ bestBid: activeLeg.bestBid }}
+            nextLegMarket={{ bestAsk: activeLeg.nextLegBestAsk }}
+            isFinalLeg={activeLeg.isFinalLeg}
+            onVoted={onVoted}
+          />
 
           <div aria-disabled={!isMember} aria-describedby={!isMember ? "append-leg-reason" : undefined}>
             {isMember && appendEligibleLot ? (
